@@ -1,5 +1,5 @@
 // 입장 팝업과 이용 기록
-// - 처음 들어오면 이름 / 입장 코드 / 관리자에게 한마디를 입력해야 편집기를 쓸 수 있다.
+// - 처음 들어오면 이름 / 입장 코드를 입력해야 편집기를 쓸 수 있다. 관리자에게 한마디는 선택.
 // - 관리자가 입장 코드를 바꾸면 다음 접속 때 입장 팝업이 다시 뜬다.
 // - PDF·이미지 저장이 끝날 때마다 '누가 언제 저장했는지'만 기록한다. 파일 내용은 보내지 않는다.
 
@@ -71,11 +71,12 @@ function showEntryDialog(saved, notice) {
     form.onsubmit = async e => {
       e.preventDefault();
       const entry = { clientId: saved?.clientId || newClientId(), name: name.value.trim() };
-      if (!entry.name || !code.value.trim() || !message.value.trim()) return;
+      if (!entry.name || !code.value.trim()) return;
       submit.disabled = true;
       error.hidden = true;
       try {
-        const r = await callServer({ action: 'enter', ...entry, code: code.value.trim(), message: message.value.trim() });
+        // 한마디는 선택. 비우면 '(없음)'으로 기록한다 (서버는 빈 값을 받지 않음)
+        const r = await callServer({ action: 'enter', ...entry, code: code.value.trim(), message: message.value.trim() || '(없음)' });
         if (r.ok) {
           saveEntry({ ...entry, codeVersion: r.codeVersion });
           dialog.close();

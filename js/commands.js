@@ -522,12 +522,14 @@ export async function applyTemplate(id, { indexes = [state.current], settings = 
  * PDF 저장 → Uint8Array
  * merge: true면 나눠서 불러온 페이지(splitGroup)가 순서대로 이어져 있을 때 다시 한 페이지로 합친다
  */
-export async function exportDocument({ merge = false } = {}) {
+export async function exportDocument({ merge = false, indexes = null } = {}) {
   editor.exitEditing();
   sync();
   commit('canvas');
-  if (!state.doc.pages.length) throw new Error('저장할 페이지가 없습니다');
-  return exportPdf(merge ? { pages: mergeSplitPages(state.doc.pages) } : state.doc);
+  // indexes: 저장할 페이지만 (기본: 전체)
+  const pages = indexes ? indexes.map(pageAt).filter(Boolean) : state.doc.pages;
+  if (!pages.length) throw new Error('저장할 페이지가 없습니다');
+  return exportPdf({ pages: merge ? mergeSplitPages(pages) : pages });
 }
 
 /** 같은 원본에서 나눈 페이지가 순서대로 이어진 묶음들 → [[page, page, ...], ...] (2쪽 이상만) */

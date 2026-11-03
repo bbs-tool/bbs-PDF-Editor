@@ -194,6 +194,7 @@ function bindToolbar() {
   $('#btnZoomOut').onclick = () => editor.setZoom(editor.getZoom() / 1.25);
   $('#btnZoomFit').onclick = () => editor.fitToStage();
   $('#btnExport').onclick = doExport;
+  bindPdfExport();
   imagePages = bindPageRange($('#imgRange'), $('#imgPages'));
   const syncBg = () => {
     // 투명 배경은 PNG만 가능
@@ -852,23 +853,47 @@ async function askSplit({ name, w, h, count }) {
 
 async function doExport() {
   if (!state.doc.pages.length) return toast('저장할 페이지가 없습니다');
-  let merge = false;
+  // 저장할 페이지(전체/현재/선택/지정)와, 나눠 불러온 페이지를 합칠지 고른다
   const runs = cmd.splitRuns();
+  $('#pdfMergeRow').hidden = !runs.length;
   if (runs.length) {
     const longest = Math.max(...runs.map(run => run.reduce((n, p) => n + p.height, 0)));
-    $('#mergeMsg').textContent = `긴 파일을 나눠 불러온 페이지 ${runs.reduce((n, r) => n + r.length, 0)}쪽이 있습니다. 합치면 원래처럼 긴 한 페이지(최대 ${toMm(longest)}mm)가 됩니다.`
+    $('#pdfMergeHint').textContent = `긴 파일을 나눠 불러온 페이지 ${runs.reduce((n, r) => n + r.length, 0)}쪽이 있습니다. 합치면 원래처럼 긴 한 페이지(최대 ${toMm(longest)}mm)가 됩니다.`
       + (longest > MAX_PAGE_PT ? ` ${MAX_PAGE_MM}mm를 넘는 페이지는 Chrome·Edge에서는 열리지만 Adobe Acrobat 등 일부 프로그램에서는 잘려 보일 수 있습니다.` : '');
-    const answer = await choose($('#mergeDialog'));
-    if (!answer || answer === 'cancel') return;
-    merge = answer === 'merge';
   }
+  $('#pdfRange').value = checkedPages.size ? 'selected' : 'all';
+  $('#pdfRange').dispatchEvent(new Event('change'));
+  $('#pdfExportDialog').showModal();
+}
+
+let pdfPages = () => state.doc.pages.map((_, i) => i); // bindToolbar에서 범위 선택칸과 연결
+
+function bindPdfExport() {
+  pdfPages = bindPageRange($('#pdfRange'), $('#pdfPages'));
+  $('#pdfExportForm').addEventListener('submit', e => {
+    if (e.submitter?.value !== 'ok') return;
+    e.preventDefault();
+    let indexes;
+    try {
+      indexes = pdfPages();
+    } catch (err) {
+      return toast(err.message, 5000);
+    }
+    $('#pdfExportDialog').close();
+    runPdfExport({ indexes, merge: !$('#pdfMergeRow').hidden && $('#pdfMerge').checked });
+  });
+}
+
+async function runPdfExport(opts) {
+  const all = opts.indexes.length === state.doc.pages.length;
+  const range = all ? '' : `_${opts.indexes.length === 1 ? `${opts.indexes[0] + 1}쪽` : `${opts.indexes.length}쪽`}`;
   try {
-    const bytes = await withBusy('PDF 만드는 중…', () => cmd.exportDocument({ merge }));
-    download(bytes, `${docName || 'document'}_편집.pdf`);
+    const bytes = await withBusy('PDF 만드는 중…', () => cmd.exportDocument(opts));
+    download(bytes, `${docName || 'document'}_편집${range}.pdf`);
     trackExport('pdf');
-    toast(`저장했습니다 (${(bytes.length / 1048576).toFixed(1)}MB)`);
+    toast(`저장했습니다 (${all ? '전체' : `${opts.indexes.length}쪽`}, ${(bytes.length / 1048576).toFixed(1)}MB)`);
   } catch (e) {
-    if (e.code === 'NEED_FONT_FILE') askFontFile(e);
+    if (e.code === 'NEED_FONT_FILE') askFontFile(e, () => runPdfExport(opts));
     else {
       console.error(e);
       toast(`저장하지 못했습니다: ${e.message}`, 6000);
