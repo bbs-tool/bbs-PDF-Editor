@@ -372,14 +372,27 @@
     </form>
   </dialog>
 
-  <dialog id="mergeDialog">
-    <form method="dialog" class="dialog-body">
-      <h3>나눠서 작업한 페이지가 있습니다</h3>
-      <p id="mergeMsg"></p>
-      <div class="choice-list">
-        <button value="merge" class="primary">원래처럼 한 페이지로 합쳐서 저장</button>
-        <button value="keep">나눈 페이지 그대로 저장</button>
-        <button value="cancel">취소</button>
+  <dialog id="pdfExportDialog">
+    <form method="dialog" class="dialog-body" id="pdfExportForm">
+      <h3>PDF로 저장</h3>
+      <div class="page-range">
+        <label>저장할 페이지
+          <select id="pdfRange">
+            <option value="all">모든 페이지</option>
+            <option value="current">현재 페이지</option>
+            <option value="selected">왼쪽 목록에서 선택한 페이지</option>
+            <option value="pick">페이지 지정</option>
+          </select>
+        </label>
+        <input type="text" id="pdfPages" placeholder="예: 1-3, 5" hidden>
+      </div>
+      <div id="pdfMergeRow" hidden>
+        <label class="check"><input type="checkbox" id="pdfMerge" checked> 나눠 불러온 페이지는 원래처럼 한 페이지로 합치기</label>
+        <p class="hint" id="pdfMergeHint"></p>
+      </div>
+      <div class="btn-row end">
+        <button value="cancel" formnovalidate>취소</button>
+        <button value="ok" class="primary">저장</button>
       </div>
     </form>
   </dialog>
