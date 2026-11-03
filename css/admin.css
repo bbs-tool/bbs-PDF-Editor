@@ -1,0 +1,26 @@
+/* 관리자 화면 (style.css 위에 덧붙임) */
+body.admin { overflow: auto; }
+.admin-main { width: min(1100px, 100%); margin: 0 auto; padding: 20px 16px 48px; display: flex; flex-direction: column; gap: 16px; }
+.admin-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+#dashboard { display: flex; flex-direction: column; gap: 16px; }
+#dashboard[hidden] { display: none; }
+.admin .card { background: var(--surface); }
+.login { width: min(380px, 100%); margin: 40px auto 0; }
+.stack { display: flex; flex-direction: column; gap: 10px; }
+.code { font-size: 18px; letter-spacing: 1px; }
+.notice { background: #fff7e6; border: 1px solid #f59e0b; border-radius: var(--radius); padding: 12px 14px; margin: 0; line-height: 1.6; }
+.link-btn { color: var(--text); text-decoration: none; border: 1px solid var(--border); border-radius: 6px; padding: 6px 12px; background: var(--surface); }
+.link-btn:hover { background: #f5f7fa; }
+
+table.data { width: 100%; border-collapse: collapse; font-size: 13px; }
+table.data th, table.data td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+table.data th { color: var(--muted); font-weight: 600; background: #f8f9fb; position: sticky; top: 0; }
+table.data td.num-col, table.data th.num-col { text-align: right; width: 90px; font-variant-numeric: tabular-nums; }
+table.data tr.empty td { color: var(--muted); text-align: center; padding: 20px; }
+.names { display: flex; flex-wrap: wrap; gap: 4px; }
+.names span { background: var(--accent-soft); color: var(--accent); border-radius: 999px; padding: 1px 8px; font-size: 12px; }
+
+@media (max-width: 700px) {
+  table.data { font-size: 12px; }
+  #userTable th:nth-child(3), #userTable td:nth-child(3) { display: none; }
+}
