@@ -2,7 +2,8 @@
 
 import { state, assets, uid, commit, emit, undo as historyUndo, redo as historyRedo, currentPage, findObject, PT_PER_MM, A4_PT, MAX_PAGE_PT } from './state.js';
 import { layoutPage, rotatePageCW, baseOf, uncropped, NO_MARGIN } from './pageSize.js';
-import { importPdf, importImage, importImageAsset, isPdf, isImage } from './importer.js';
+import { importPdf, importImage, importImageAsset, isPdf, isImage, isOffice } from './importer.js';
+import { flattenBlurs, BLUR_DEFAULTS } from './blur.js';
 import { exportPdf } from './exporter.js';
 import { renderPdfToImages } from './imageExport.js';
 import { DEFAULT_FONT } from './fonts.js';
@@ -60,6 +61,7 @@ export async function openFiles(files, at, { askSplit } = {}) {
   for (const file of files) {
     try {
       const items = isPdf(file) ? await importPdf(file) : isImage(file) ? await importImage(file) : null;
+      if (!items && isOffice(file)) throw new Error(`${file.name}: Word·PPT·한글 파일은 아직 바로 열 수 없습니다. 해당 프로그램에서 [다른 이름으로 저장 → PDF]로 저장한 뒤 열어 주세요.`);
       if (!items) throw new Error(`${file.name}: 지원하지 않는 형식입니다`);
       const long = items.filter(item => item.natH > MAX_PAGE_PT);
       const mode = long.length && askSplit ? await askSplit({ name: file.name, w: long[0].natW, h: long[0].natH, count: long.length }) : 'none';
@@ -272,6 +274,29 @@ export async function addShape(type, opts = {}) {
     fill: '#4472c4',
     stroke: '#2f528f',
     strokeWidth: 1,
+    ...props,
+  };
+  const [id] = await addObjects([o], pageIndex);
+  return id;
+}
+
+/** 모자이크·블러 영역. opts: { shape: 'rect'|'ellipse', mode: 'mosaic'|'blur', strength: 10~100, cx, cy, w, h, pageIndex } */
+export async function addBlur(opts = {}) {
+  sync();
+  const { pageIndex, ...props } = opts;
+  ensurePage(pageIndex);
+  const page = pageAt(pageIndex);
+  const o = {
+    id: uid(),
+    type: 'blur',
+    cx: page.width / 2,
+    cy: page.height / 2,
+    w: 140,
+    h: 70,
+    angle: 0,
+    opacity: 1,
+    locked: false,
+    ...BLUR_DEFAULTS,
     ...props,
   };
   const [id] = await addObjects([o], pageIndex);
@@ -529,7 +554,13 @@ export async function exportDocument({ merge = false, indexes = null } = {}) {
   // indexes: 저장할 페이지만 (기본: 전체)
   const pages = indexes ? indexes.map(pageAt).filter(Boolean) : state.doc.pages;
   if (!pages.length) throw new Error('저장할 페이지가 없습니다');
-  return exportPdf({ pages: merge ? mergeSplitPages(pages) : pages });
+  // 모자이크·블러가 있는 페이지는 원본 글자가 남지 않도록 이미지로 합친다 (300dpi)
+  const flat = await flattenBlurs(pages, { dpi: 300 });
+  try {
+    return await exportPdf({ pages: merge ? mergeSplitPages(flat.pages) : flat.pages });
+  } finally {
+    flat.cleanup();
+  }
 }
 
 /** 같은 원본에서 나눈 페이지가 순서대로 이어진 묶음들 → [[page, page, ...], ...] (2쪽 이상만) */
@@ -577,7 +608,15 @@ export async function exportImages({ indexes = [state.current], format = 'png', 
   const list = indexes.filter(i => pageAt(i));
   if (!list.length) throw new Error('저장할 페이지가 없습니다');
   // merge: 나눠 불러온 페이지가 이어져 있으면 한 장의 긴 이미지로 (pageIndex는 묶음의 첫 페이지)
-  const pages = list.map(pageAt);
+  const flat = await flattenBlurs(list.map(pageAt), { dpi: Math.max(dpi, 150) });
+  try {
+    return await renderImages(flat.pages, list, { format, dpi, background, merge, onProgress });
+  } finally {
+    flat.cleanup();
+  }
+}
+
+async function renderImages(pages, list, { format, dpi, background, merge, onProgress }) {
   const merged = merge ? mergeSplitPages(pages) : pages;
   const firstIndex = [];
   for (let i = 0, k = 0; i < merged.length; i++) {

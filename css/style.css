@@ -58,7 +58,22 @@ input[type="range"] { flex: 1; }
   border-bottom: 1px solid var(--border);
   flex-wrap: wrap;
 }
-.brand { font-weight: 700; margin-right: 6px; }
+/* 로고: BB's는 필기체 (fonts/brand/DancingScript.ttf, OFL) */
+@font-face {
+  font-family: "BB Script";
+  src: url("../fonts/brand/DancingScript.ttf") format("truetype");
+  font-weight: 400 700;
+  font-display: swap;
+}
+.brand { font-weight: 700; margin-right: 6px; display: inline-flex; align-items: baseline; gap: 5px; white-space: nowrap; user-select: none; }
+.brand-bb {
+  font-family: "BB Script", "Segoe Script", "Brush Script MT", cursive;
+  font-weight: 700; font-size: 25px; line-height: 1; color: var(--accent);
+  letter-spacing: .5px; transform: rotate(-4deg); display: inline-block;
+}
+.brand-name { font-size: 15px; letter-spacing: -.2px; }
+.brand-sub { font-size: 13px; color: var(--muted); font-weight: 600; margin-left: 2px; }
+.entry-title .brand-bb { font-size: 26px; margin-right: 2px; }
 .group { display: flex; gap: 6px; align-items: center; padding-left: 10px; border-left: 1px solid var(--border); }
 .group:first-of-type { border-left: 0; padding-left: 0; }
 .zoom span { min-width: 48px; text-align: center; font-variant-numeric: tabular-nums; }
@@ -100,7 +115,7 @@ input[type="range"] { flex: 1; }
 body.dragging .stage, body.dragging .pages { outline: 3px dashed var(--accent); outline-offset: -6px; }
 
 /* 오른쪽 패널 */
-.panel { background: var(--surface); border-left: 1px solid var(--border); overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 12px; }
+.panel { background: var(--surface); border-left: 1px solid var(--border); overflow-y: auto; padding: 12px 12px 80px; /* 아래 여백: 공지 버튼에 가리지 않게 */ display: flex; flex-direction: column; gap: 12px; }
 .card { border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; display: flex; flex-direction: column; gap: 10px; }
 .card.disabled { opacity: .5; pointer-events: none; }
 /* 선택한 요소 패널: 페이지 설정과 헷갈리지 않게 색 테두리로 구분 */
@@ -119,6 +134,8 @@ button.icon.close:hover { background: #e8efff; color: var(--text); }
 .val { width: 40px; text-align: right; font-size: 12px; color: var(--muted); }
 .muted { color: var(--muted); font-size: 12px; font-weight: 400; }
 .hint { margin: 0; font-size: 12px; color: var(--muted); line-height: 1.5; }
+.hint.warn { background: #fff7e6; border: 1px solid #f5c26b; color: #8a5300; border-radius: 6px; padding: 8px 10px; }
+#blurPresets button { flex: 1 1 40%; }
 .btn-row { display: flex; flex-wrap: wrap; gap: 6px; }
 .btn-row button { flex: 1 1 auto; padding: 5px 8px; font-size: 12px; }
 .btn-row.end { justify-content: flex-end; }
@@ -187,6 +204,45 @@ code { background: #f1f3f6; padding: 1px 5px; border-radius: 4px; font-size: 12p
 }
 .crop-bar button:not(.primary) { background: transparent; color: #fff; border-color: #4b5563; }
 
+/* 공지사항 */
+.notice-fab {
+  position: fixed; right: 20px; bottom: 20px; z-index: 45;
+  width: 46px; height: 46px; padding: 0; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--accent); border-color: var(--accent); color: #fff;
+  box-shadow: 0 4px 14px rgba(37,99,235,.35);
+}
+.notice-fab:hover:not(:disabled) { background: #1d4fd8; }
+.notice-fab[aria-expanded="true"] { background: #1d4fd8; }
+.notice-dot { position: absolute; top: 4px; right: 4px; width: 11px; height: 11px; border-radius: 50%; background: var(--danger); border: 2px solid #fff; display: none; }
+.notice-fab.has-new .notice-dot { display: block; }
+.notice-panel {
+  position: fixed; right: 20px; bottom: 76px; z-index: 46;
+  width: min(360px, calc(100vw - 32px)); max-height: min(520px, calc(100vh - 120px));
+  background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+  box-shadow: 0 10px 34px rgba(0,0,0,.22); display: flex; flex-direction: column; overflow: hidden;
+}
+.notice-head { display: flex; align-items: center; gap: 6px; padding: 10px 10px 10px 16px; border-bottom: 1px solid var(--border); }
+.notice-head h3 { margin: 0; font-size: 15px; flex: 1; }
+.notice-head #noticeBack { font-size: 22px; margin-left: -8px; }
+.notice-list { list-style: none; margin: 0; padding: 6px; overflow-y: auto; }
+.notice-item {
+  width: 100%; border: 0; background: transparent; text-align: left; white-space: normal;
+  display: flex; flex-direction: column; gap: 3px; padding: 10px; border-radius: 8px;
+}
+.notice-list li + li .notice-item { border-top: 1px solid #f0f2f5; border-radius: 0 0 8px 8px; }
+.notice-item-title { font-weight: 600; line-height: 1.45; }
+.notice-item-date { font-size: 12px; color: var(--muted); }
+.notice-new { font-style: normal; display: inline-block; margin-right: 6px; padding: 0 5px; border-radius: 4px; background: var(--danger); color: #fff; font-size: 11px; line-height: 17px; vertical-align: 1px; }
+.notice-empty { padding: 28px 10px; text-align: center; color: var(--muted); }
+.notice-detail { padding: 14px 16px 18px; overflow-y: auto; }
+.notice-detail h4 { margin: 0 0 4px; font-size: 15px; line-height: 1.45; }
+.notice-detail .muted { margin: 0 0 12px; }
+.notice-body { white-space: pre-wrap; word-break: break-word; line-height: 1.7; font-size: 13.5px; }
+
+/* 도형 그리기 중: 페이지 위가 십자 커서 */
+.stage.drawing .canvas-container { outline: 2px dashed #93b4f5; outline-offset: 3px; }
+
 /* 처음 사용 안내 */
 .tour { position: fixed; inset: 0; z-index: 70; }
 .tour-hole {
@@ -212,4 +268,7 @@ code { background: #f1f3f6; padding: 1px 5px; border-radius: 4px; font-size: 12p
   .layout { grid-template-columns: 140px 1fr; }
   .panel { position: fixed; right: 0; top: auto; bottom: 0; width: 100%; max-height: 45vh; border-top: 1px solid var(--border); }
   .thumb img { width: 110px; }
+  /* 오른쪽 패널이 아래로 내려오므로 공지 버튼은 그 위에 */
+  body:not(.admin) .notice-fab { bottom: calc(45vh + 12px); }
+  body:not(.admin) .notice-panel { bottom: calc(45vh + 68px); max-height: calc(55vh - 90px); }
 }

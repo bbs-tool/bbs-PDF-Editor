@@ -1,4 +1,4 @@
-// 관리자 화면: 이용 현황(일·주·월·연별 이용자 수와 명단), 이용자 목록, 입장 코드 변경
+// 관리자 화면: 이용 현황(일·주·월·연별 이용자 수와 명단), 이용자 목록, 입장 코드 변경, 공지사항 등록·수정·삭제
 // 데이터는 모두 Apps Script 서버에 관리자 토큰(메일 인증으로 받음)을 보내 받아 온다. 이 페이지에는 아무 데이터도 들어 있지 않다.
 
 import { TRACKING_URL } from './config.js';
@@ -161,11 +161,111 @@ function render() {
       return tr;
     })
     : [emptyRow(5, '아직 입장한 이용자가 없습니다')]));
+
+  renderNotices();
+}
+
+// ── 공지사항 ──────────────────────────────────────────
+
+let editingId = null; // 수정 중인 공지 (없으면 새로 등록)
+
+function renderNotices() {
+  const notices = data.notices;
+  const ready = Array.isArray(notices);
+  $('#noticeForm').querySelectorAll('input, textarea, button').forEach(el => { el.disabled = !ready; });
+  if (!ready) {
+    $('#noticeCount').textContent = '';
+    $('#noticeRows').replaceChildren(emptyRow(3, '기록 서버(Apps Script)를 새 버전으로 다시 배포해야 공지사항을 쓸 수 있습니다'));
+    return;
+  }
+  $('#noticeCount').textContent = `${notices.length}개`;
+  $('#noticeRows').replaceChildren(...(notices.length ? notices.map(n => {
+    const tr = document.createElement('tr');
+    if (n.id === editingId) tr.className = 'editing';
+    const title = cell(n.title);
+    title.append(Object.assign(document.createElement('div'), { className: 'notice-preview', textContent: n.body }));
+    const acts = cell('', 'act-col');
+    const edit = Object.assign(document.createElement('button'), { className: 'small', textContent: '수정' });
+    edit.onclick = () => startEdit(n);
+    const del = Object.assign(document.createElement('button'), { className: 'small danger', textContent: '삭제' });
+    del.onclick = () => deleteNotice(n);
+    acts.append(edit, del);
+    tr.append(title, cell(fmt(n.time).slice(0, 10), 'date-col'), acts);
+    return tr;
+  }) : [emptyRow(3, '등록된 공지사항이 없습니다')]));
+}
+
+function updateNoticeCount() {
+  $('#noticeBodyCount').textContent = `${$('#noticeBodyInput').value.length}/3000`;
+}
+
+function startEdit(n) {
+  editingId = n.id;
+  $('#noticeTitleInput').value = n.title;
+  $('#noticeBodyInput').value = n.body;
+  $('#noticeFormTitle').textContent = '공지사항 수정';
+  $('#noticeSubmit').textContent = '수정 저장';
+  $('#noticeCancel').hidden = false;
+  updateNoticeCount();
+  renderNotices();
+  $('#noticeTitleInput').focus();
+  $('#noticeForm').scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+}
+
+function resetNoticeForm() {
+  editingId = null;
+  $('#noticeForm').reset();
+  $('#noticeFormTitle').textContent = '공지사항 등록';
+  $('#noticeSubmit').textContent = '등록';
+  $('#noticeCancel').hidden = true;
+  updateNoticeCount();
+}
+
+/** 공지 저장·삭제 공통: 서버 응답의 최신 목록으로 바꾼다 */
+async function noticeCall(op, extra, busyMsg) {
+  try {
+    const r = await withBusy(busyMsg, () => adminCall(op, extra));
+    if (!r.ok) {
+      if (r.error === 'not-authorized') showAuth('인증 시간이 지났습니다. 다시 인증해 주세요.');
+      else toast(r.error === 'not-found' ? '이미 삭제된 공지입니다. 새로고침해 주세요.' : errorText(r));
+      return false;
+    }
+    data.notices = r.notices;
+    return true;
+  } catch (err) {
+    toast(`서버에 연결할 수 없습니다 (${err.message})`);
+    return false;
+  }
+}
+
+async function deleteNotice(n) {
+  if (!confirm(`'${n.title}' 공지를 삭제할까요?\n편집기에서도 바로 사라집니다.`)) return;
+  if (!(await noticeCall('noticeDelete', { id: n.id }, '삭제하는 중…'))) return;
+  if (editingId === n.id) resetNoticeForm();
+  renderNotices();
+  toast('공지를 삭제했습니다');
+}
+
+function bindNotices() {
+  $('#noticeBodyInput').oninput = updateNoticeCount;
+  $('#noticeCancel').onclick = () => { resetNoticeForm(); renderNotices(); };
+  $('#noticeForm').onsubmit = async e => {
+    e.preventDefault();
+    const title = $('#noticeTitleInput').value.trim();
+    const body = $('#noticeBodyInput').value.trim();
+    if (!title || !body) return toast('제목과 내용을 입력해 주세요');
+    const editing = !!editingId;
+    if (!(await noticeCall('noticeSave', { id: editingId || '', title, body }, editing ? '수정하는 중…' : '등록하는 중…'))) return;
+    resetNoticeForm();
+    renderNotices();
+    toast(editing ? '공지를 수정했습니다' : '공지를 등록했습니다. 편집기 오른쪽 아래 공지 버튼에 바로 보입니다');
+  };
 }
 
 // ── 연결 ──────────────────────────────────────────────
 
 function bind() {
+  bindNotices();
   $('#btnLogout').onclick = async () => {
     await adminCall('logout').catch(() => {});
     showAuth();

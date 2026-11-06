@@ -3,13 +3,13 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>PDF 편집기</title>
+  <title>BB's PDF Editor</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='5' y='2' width='22' height='28' rx='3' fill='%232563eb'/%3E%3Cpath d='M10 11h12M10 16h12M10 21h8' stroke='white' stroke-width='2'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
   <header class="toolbar">
-    <div class="brand">PDF 편집기</div>
+    <div class="brand" aria-label="BB's PDF Editor"><span class="brand-bb">BB's</span><span class="brand-name">PDF Editor</span></div>
 
     <div class="group">
       <button id="btnOpen" class="primary" title="PDF·이미지를 새 페이지로 추가">파일 열기</button>
@@ -17,6 +17,7 @@
       <button id="btnText" title="텍스트 상자 추가">텍스트</button>
       <button id="btnRect" title="네모 추가">▭ 네모</button>
       <button id="btnEllipse" title="동그라미 추가">◯ 동그라미</button>
+      <button id="btnBlur" title="끌어서 영역을 정하면 모자이크·블러로 가립니다">▦ 모자이크·블러</button>
     </div>
 
     <div class="group">
@@ -112,6 +113,34 @@
             <label class="check"><input type="checkbox" id="propStrokeNone">없음</label>
             <label class="inline">두께<input type="number" min="0.5" max="50" step="0.5" id="propStrokeWidth"></label>
           </div>
+        </div>
+
+        <div id="blurFields" class="sub" hidden>
+          <div class="row">
+            <span class="label">효과</span>
+            <div class="seg" id="blurMode">
+              <button data-mode="mosaic">모자이크</button>
+              <button data-mode="blur">블러</button>
+            </div>
+          </div>
+          <div class="row">
+            <span class="label">모양</span>
+            <div class="seg" id="blurShape">
+              <button data-shape="rect">▭ 네모</button>
+              <button data-shape="ellipse">◯ 동그라미</button>
+            </div>
+          </div>
+          <label class="row">강도
+            <input type="range" min="10" max="100" step="5" id="blurStrength">
+            <span id="blurStrengthVal" class="val">50%</span>
+          </label>
+          <div class="btn-row" id="blurPresets">
+            <button data-strength="25">약하게 25%</button>
+            <button data-strength="50">보통 50%</button>
+            <button data-strength="75">강하게 75%</button>
+            <button data-strength="100">최대 100%</button>
+          </div>
+          <p class="hint">여기서 고른 값은 다음에 그릴 때도 쓰입니다. 저장하면 이 페이지는 원본 글자가 남지 않도록 이미지로 바뀝니다.</p>
         </div>
 
         <div class="sub">
@@ -330,7 +359,7 @@
 
   <dialog id="entryDialog" class="entry-dialog">
     <form class="dialog-body">
-      <h3>PDF 편집기 입장</h3>
+      <h3 class="entry-title"><span class="brand-bb">BB's</span> PDF Editor 입장</h3>
       <p class="hint">관리자에게 받은 입장 코드를 입력해야 사용할 수 있습니다.</p>
       <label>이름<input type="text" id="entryName" required autocomplete="name" placeholder="예: 홍길동"></label>
       <label>입장 코드<input type="password" id="entryCode" required autocomplete="off"></label>
@@ -390,12 +419,32 @@
         <label class="check"><input type="checkbox" id="pdfMerge" checked> 나눠 불러온 페이지는 원래처럼 한 페이지로 합치기</label>
         <p class="hint" id="pdfMergeHint"></p>
       </div>
+      <p class="hint warn" id="pdfBlurHint" hidden></p>
       <div class="btn-row end">
         <button value="cancel" formnovalidate>취소</button>
         <button value="ok" class="primary">저장</button>
       </div>
     </form>
   </dialog>
+
+  <!-- 공지사항: 오른쪽 아래 버튼 → 목록 → 내용 (관리자 화면에서 등록) -->
+  <button id="btnNotice" class="notice-fab" title="공지사항" aria-label="공지사항" aria-controls="noticePanel" aria-expanded="false" hidden>
+    <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M3 10v4a1 1 0 0 0 1 1h2l5 4V5L6 9H4a1 1 0 0 0-1 1Z" fill="currentColor"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18 6a8.5 8.5 0 0 1 0 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+    <span class="notice-dot" aria-hidden="true"></span>
+  </button>
+  <section id="noticePanel" class="notice-panel" role="dialog" aria-labelledby="noticeHeading" hidden>
+    <header class="notice-head">
+      <button id="noticeBack" class="icon close" title="목록으로" aria-label="목록으로" hidden>‹</button>
+      <h3 id="noticeHeading">공지사항</h3>
+      <button id="noticeClose" class="icon close" title="닫기 (Esc)" aria-label="닫기">×</button>
+    </header>
+    <ul id="noticeList" class="notice-list"></ul>
+    <article id="noticeDetail" class="notice-detail" hidden>
+      <h4 id="noticeTitle"></h4>
+      <p id="noticeDate" class="muted"></p>
+      <div id="noticeBody" class="notice-body"></div>
+    </article>
+  </section>
 
   <div id="contextMenu" class="context-menu" hidden></div>
 

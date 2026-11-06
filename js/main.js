@@ -15,13 +15,25 @@ import { ensureEntry, trackExport } from './gate.js';
 import { bindAdminAuth, getAdminToken } from './adminAuth.js';
 import { TRACKING_URL } from './config.js';
 import { extensions } from './extensions/index.js';
+import { initNotices } from './notice.js';
+import { BLUR_DEFAULTS, hasBlur } from './blur.js';
 
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 const toMm = pt => Math.round((pt / PT_PER_MM) * 10) / 10;
 const toPt = mm => mm * PT_PER_MM;
 
-const TYPE_LABEL = { pdfpage: 'PDF 원본 페이지', image: '이미지', text: '텍스트', rect: '네모', ellipse: '동그라미' };
+const TYPE_LABEL = { pdfpage: 'PDF 원본 페이지', image: '이미지', text: '텍스트', rect: '네모', ellipse: '동그라미', blur: '모자이크·블러' };
+const DRAW_BUTTON = { rect: '#btnRect', ellipse: '#btnEllipse', blur: '#btnBlur' };
+
+// 모자이크·블러: 마지막으로 고른 효과·모양·강도를 다음에 그릴 때도 쓴다 (이 브라우저에 기억)
+const BLUR_KEY = 'pdf-editor.blurDefaults';
+let blurDefaults = { ...BLUR_DEFAULTS };
+try { Object.assign(blurDefaults, JSON.parse(localStorage.getItem(BLUR_KEY)) || {}); } catch { /* 기본값 */ }
+function rememberBlur(patch) {
+  Object.assign(blurDefaults, patch);
+  try { localStorage.setItem(BLUR_KEY, JSON.stringify(blurDefaults)); } catch { /* 무시 */ }
+}
 const FONT_SOURCE_LABEL = { file: '기본 포함', system: 'Windows 기본 · 저장 시 PC에서 불러옴', user: '직접 추가' };
 
 let docName = '';
@@ -75,6 +87,10 @@ async function boot() {
     onSelection: ids => { selection = ids; renderObjectPanel(); },
     onZoom: z => { $('#zoomLabel').textContent = `${Math.round(z * 100)}%`; },
     onCrop: active => { $('#cropBar').hidden = !active; },
+    onDraw: type => {
+      for (const [t, sel] of Object.entries(DRAW_BUTTON)) $(sel).classList.toggle('active', type === t);
+      $('#stage').classList.toggle('drawing', !!type);
+    },
     onDragMove: e => markDropTarget(pageItemAt(e)),
     onDragDrop: (e, ids) => {
       const li = pageItemAt(e);
@@ -116,6 +132,7 @@ async function boot() {
 
   $('#btnHelp').onclick = startTour;
   bindAdminButton();
+  initNotices(); // 기다리지 않는다 (서버가 느려도 편집기는 바로 쓸 수 있게)
   if (shouldAutoStart()) startTour();
 
   window.addEventListener('beforeunload', e => {
@@ -170,6 +187,35 @@ async function insertImagesUi(files) {
   }
 }
 
+/** 네모·동그라미: 버튼을 누른 뒤 페이지 위를 끌어서 그린다. 같은 버튼을 다시 누르거나 Esc로 취소 */
+function drawShapeUi(type) {
+  if (!needPage()) return;
+  if (editor.isDrawing()) {
+    const same = $(DRAW_BUTTON[type]).classList.contains('active');
+    editor.cancelDraw();
+    if (same) return;
+  }
+  editor.exitEditing();
+  const blur = type === 'blur';
+  const shape = blur ? blurDefaults.shape : type;
+  const started = editor.startDraw(type, async box => {
+    try {
+      if (blur) await cmd.addBlur({ ...blurDefaults, ...box });
+      else await cmd.addShape(type, box);
+    } catch (e) {
+      toast(e.message, 4000);
+    }
+  }, { shape });
+  if (!started) return;
+  const square = shape === 'rect' ? '정사각형' : '정원';
+  if (blur) {
+    const what = `${blurDefaults.mode === 'blur' ? '블러' : '모자이크'} ${blurDefaults.strength}% · ${shape === 'rect' ? '네모' : '동그라미'}`;
+    toast(`가릴 영역을 끌어서 지정하세요 (${what})\n효과·모양·강도는 그린 뒤 오른쪽 패널에서 바꿉니다 · Shift: ${square} · Esc: 취소`, 5000);
+  } else {
+    toast(`페이지 위를 끌어서 ${TYPE_LABEL[type]}를 그리세요\n클릭만 하면 기본 크기 · Shift: ${square} · Esc: 취소`, 4000);
+  }
+}
+
 function bindToolbar() {
   $('#btnOpen').onclick = () => $('#fileOpen').click();
   $('#fileOpen').onchange = async e => {
@@ -186,8 +232,9 @@ function bindToolbar() {
     const id = await cmd.addText();
     editor.editText(id);
   };
-  $('#btnRect').onclick = () => needPage() && cmd.addShape('rect');
-  $('#btnEllipse').onclick = () => needPage() && cmd.addShape('ellipse');
+  $('#btnRect').onclick = () => drawShapeUi('rect');
+  $('#btnEllipse').onclick = () => drawShapeUi('ellipse');
+  $('#btnBlur').onclick = () => drawShapeUi('blur');
   $('#btnUndo').onclick = () => cmd.undo();
   $('#btnRedo').onclick = () => cmd.redo();
   $('#btnZoomIn').onclick = () => editor.setZoom(editor.getZoom() * 1.25);
@@ -530,6 +577,15 @@ function renderObjectPanel() {
     setVal('#propStroke', o.stroke || '#000000');
     setVal('#propStrokeWidth', o.strokeWidth);
   }
+  const allBlur = objs.every(x => x.type === 'blur');
+  $('#blurFields').hidden = !allBlur;
+  if (allBlur) {
+    for (const b of $$('#blurMode button')) b.classList.toggle('active', b.dataset.mode === o.mode);
+    for (const b of $$('#blurShape button')) b.classList.toggle('active', b.dataset.shape === o.shape);
+    setVal('#blurStrength', o.strength);
+    $('#blurStrengthVal').textContent = `${o.strength}%`;
+    for (const b of $$('#blurPresets button')) b.classList.toggle('active', Number(b.dataset.strength) === o.strength);
+  }
   $('#btnPaste').disabled = !cmd.hasClipboard();
 }
 
@@ -591,6 +647,30 @@ function bindObjectPanel() {
   $('#propStrokeWidth').onchange = e => {
     const v = parseFloat(e.target.value);
     if (v > 0) update({ strokeWidth: v });
+  };
+
+  // 모자이크·블러
+  const blurUpdate = (patch, opts) => {
+    rememberBlur(patch);
+    return update(patch, opts);
+  };
+  $('#blurMode').onclick = e => {
+    const mode = e.target.closest('button')?.dataset.mode;
+    if (mode) blurUpdate({ mode });
+  };
+  $('#blurShape').onclick = e => {
+    const shape = e.target.closest('button')?.dataset.shape;
+    if (shape) blurUpdate({ shape });
+  };
+  const strength = $('#blurStrength');
+  strength.oninput = () => {
+    $('#blurStrengthVal').textContent = `${strength.value}%`;
+    update({ strength: Number(strength.value) }, { record: false });
+  };
+  strength.onchange = () => blurUpdate({ strength: Number(strength.value) });
+  $('#blurPresets').onclick = e => {
+    const v = Number(e.target.closest('button')?.dataset.strength);
+    if (v) blurUpdate({ strength: v });
   };
 
   for (const b of $$('[data-arrange]')) b.onclick = () => cmd.arrange(selection, b.dataset.arrange);
@@ -861,6 +941,9 @@ async function doExport() {
     $('#pdfMergeHint').textContent = `긴 파일을 나눠 불러온 페이지 ${runs.reduce((n, r) => n + r.length, 0)}쪽이 있습니다. 합치면 원래처럼 긴 한 페이지(최대 ${toMm(longest)}mm)가 됩니다.`
       + (longest > MAX_PAGE_PT ? ` ${MAX_PAGE_MM}mm를 넘는 페이지는 Chrome·Edge에서는 열리지만 Adobe Acrobat 등 일부 프로그램에서는 잘려 보일 수 있습니다.` : '');
   }
+  const blurPages = state.doc.pages.filter(hasBlur).length;
+  $('#pdfBlurHint').hidden = !blurPages;
+  $('#pdfBlurHint').textContent = `모자이크·블러가 있는 페이지(${blurPages}쪽)는 가린 원본 글자가 PDF 안에 남지 않도록 300dpi 이미지로 바꿔 저장합니다. 그 페이지의 글자는 선택·검색되지 않으며, 맨 위 모자이크·블러보다 위에 올린 텍스트·도형은 그대로 남습니다.`;
   $('#pdfRange').value = checkedPages.size ? 'selected' : 'all';
   $('#pdfRange').dispatchEvent(new Event('change'));
   $('#pdfExportDialog').showModal();
@@ -1048,6 +1131,7 @@ function bindKeyboard() {
       return;
     }
     if (k === 'escape') hideContextMenu();
+    if (editor.isDrawing() && k === 'escape') return run(() => editor.cancelDraw());
 
     if (mod && k === 'z' && !e.shiftKey) run(() => cmd.undo());
     else if (mod && (k === 'y' || (k === 'z' && e.shiftKey))) run(() => cmd.redo());
@@ -1105,7 +1189,7 @@ function bindDragDrop() {
       // 편집 화면: 이미지는 현재 페이지 위에, PDF는 다음 페이지로
       const images = files.filter(f => isImage(f) && !isPdf(f));
       await insertImagesUi(images);
-      await openFilesUi(files.filter(isPdf));
+      await openFilesUi(files.filter(f => !images.includes(f))); // PDF, 그리고 열 수 없는 형식은 안내 문구
     } else {
       await openFilesUi(files, onStage ? undefined : state.doc.pages.length);
     }

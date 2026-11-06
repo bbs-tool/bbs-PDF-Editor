@@ -4,6 +4,7 @@ import { currentPage, assets } from './state.js';
 import { renderPdfPage } from './pdfRender.js';
 import { cssFamily } from './fonts.js';
 import { NO_CROP, uncropped } from './pageSize.js';
+import { paintEffect } from './blur.js';
 
 const round = v => Math.round(v * 100) / 100;
 const norm = a => round(((a % 360) + 360) % 360) % 360;
@@ -118,6 +119,13 @@ export async function buildFabricObject(o, rasterPerPt = 2) {
       fo = new fabric.Rect({ ...common, width: o.w, height: o.h, ...shapeStyle(o) });
     } else if (o.type === 'ellipse') {
       fo = new fabric.Ellipse({ ...common, rx: o.w / 2, ry: o.h / 2, ...shapeStyle(o) });
+    } else if (o.type === 'blur') {
+      // 아래에 그려진 픽셀을 읽어 효과를 넣으므로 따로 캐시하지 않고 매번 캔버스에 직접 그린다
+      fo = new fabric.Rect({ ...common, width: o.w, height: o.h, fill: 'rgba(0,0,0,0)', strokeWidth: 0, objectCaching: false });
+      const effect = { shape: o.shape, mode: o.mode, strength: o.strength };
+      fo._render = function (ctx) {
+        paintEffect(ctx, this.width, this.height, effect, Math.abs(this.scaleX) || 1);
+      };
     }
   } catch (e) {
     console.error('요소를 그리지 못했습니다', o, e);
@@ -211,6 +219,7 @@ function applyDimensions(page) {
  */
 export async function renderCurrentPage({ fit = false, keepZoom = false, select = null } = {}) {
   cancelCrop();
+  cancelDraw();
   const token = ++renderToken;
   const page = currentPage();
   if (!page) {
@@ -331,6 +340,7 @@ export async function startCrop(id) {
   const o = page?.objects.find(x => x.id === id);
   const fo = canvas.getObjects().find(f => f.data?.id === id);
   if (!o || !fo || (o.type !== 'pdfpage' && o.type !== 'image')) return false;
+  cancelDraw();
   cancelCrop();
 
   const full = { ...o, ...uncropped(o), crop: null, opacity: 1 };
@@ -417,6 +427,96 @@ export function cancelCrop() {
   canvas.requestRenderAll();
   hooks.onCrop?.(false);
   hooks.onSelection?.(getSelectedIds());
+}
+
+// ── 도형 그리기 ───────────────────────────────────────
+// 네모·동그라미 도구를 고른 뒤 페이지 위를 끌면 그 위치에 끈 크기로 만든다 (PPT와 같은 방식).
+// 클릭만 하면 그 자리를 가운데로 기본 크기, Shift를 누르고 끌면 정사각형·정원.
+
+let draw = null;
+
+export const isDrawing = () => !!draw;
+
+/** onDone({ cx, cy, w, h }) — 단위는 pt(페이지 좌표). shape: 미리보기 모양 ('ellipse'면 타원) */
+export function startDraw(type, onDone, { shape = type } = {}) {
+  cancelDraw();
+  if (!canvas || !currentPage() || crop) return false;
+  muteSelection++;
+  canvas.discardActiveObject();
+  muteSelection--;
+  hooks.onSelection?.([]);
+  const restore = canvas.getObjects().map(f => [f, f.selectable, f.evented]);
+  for (const f of canvas.getObjects()) f.set({ selectable: false, evented: false });
+  const prev = { selection: canvas.selection, defaultCursor: canvas.defaultCursor, hoverCursor: canvas.hoverCursor };
+  canvas.selection = false;
+  canvas.defaultCursor = canvas.hoverCursor = 'crosshair';
+
+  let start = null;
+  let preview = null;
+  const boxOf = opt => {
+    const p = canvas.getPointer(opt.e);
+    let w = p.x - start.x;
+    let h = p.y - start.y;
+    if (opt.e.shiftKey) {
+      const s = Math.max(Math.abs(w), Math.abs(h));
+      w = Math.sign(w || 1) * s;
+      h = Math.sign(h || 1) * s;
+    }
+    return { left: Math.min(start.x, start.x + w), top: Math.min(start.y, start.y + h), w: Math.abs(w), h: Math.abs(h) };
+  };
+  const down = opt => {
+    if (opt.e.button === 2) return;
+    start = canvas.getPointer(opt.e);
+    const style = {
+      originX: 'left', originY: 'top', left: start.x, top: start.y, selectable: false, evented: false,
+      fill: 'rgba(68,114,196,0.25)', stroke: '#2563eb', strokeWidth: 1.5, strokeUniform: true, strokeDashArray: [5, 4], data: { id: null },
+    };
+    if (type === 'blur') Object.assign(style, { fill: 'rgba(17,24,39,0.18)', stroke: '#111827' });
+    preview = shape === 'ellipse' ? new fabric.Ellipse({ ...style, rx: 0, ry: 0 }) : new fabric.Rect({ ...style, width: 0, height: 0 });
+    canvas.add(preview);
+  };
+  const move = opt => {
+    if (!start || !preview) return;
+    const b = boxOf(opt);
+    if (shape === 'ellipse') preview.set({ left: b.left, top: b.top, rx: b.w / 2, ry: b.h / 2 });
+    else preview.set({ left: b.left, top: b.top, width: b.w, height: b.h });
+    canvas.requestRenderAll();
+  };
+  const up = opt => {
+    if (!start) return;
+    const b = boxOf(opt);
+    const tiny = 6 / zoom; // 화면에서 6px 이하로 움직였으면 '클릭'으로 본다
+    const result = b.w < tiny && b.h < tiny
+      ? { cx: start.x, cy: start.y }
+      : { cx: b.left + b.w / 2, cy: b.top + b.h / 2, w: Math.max(b.w, 2), h: Math.max(b.h, 2) };
+    cancelDraw();
+    onDone(result);
+  };
+  canvas.on('mouse:down', down);
+  canvas.on('mouse:move', move);
+  canvas.on('mouse:up', up);
+  draw = {
+    type,
+    cleanup() {
+      canvas.off('mouse:down', down);
+      canvas.off('mouse:move', move);
+      canvas.off('mouse:up', up);
+      if (preview) canvas.remove(preview);
+      for (const [f, selectable, evented] of restore) f.set({ selectable, evented });
+      Object.assign(canvas, prev);
+      canvas.requestRenderAll();
+    },
+  };
+  hooks.onDraw?.(type);
+  return true;
+}
+
+export function cancelDraw() {
+  if (!draw) return;
+  const d = draw;
+  draw = null;
+  d.cleanup();
+  hooks.onDraw?.(null);
 }
 
 // ── 확대·축소 ─────────────────────────────────────────

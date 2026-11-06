@@ -36,6 +36,7 @@ export function createApi() {
     // 요소
     addText: cmd.addText,
     addShape: cmd.addShape,
+    addBlur: cmd.addBlur, // ({ shape: 'rect'|'ellipse', mode: 'mosaic'|'blur', strength: 10~100, cx, cy, w, h })
     insertImages: cmd.insertImages,
     updateObject: cmd.updateObject,
     updateObjects: cmd.updateObjects,

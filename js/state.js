@@ -33,6 +33,7 @@ export const assets = new Map();
  *   image:   assetId, natW, natH
  *   text:    text, fontFamily, bold, fontSize, color, align, lineHeight
  *   rect / ellipse: fill, stroke, strokeWidth  (색이 null이면 없음)
+ *   blur:    shape ('rect'|'ellipse'), mode ('mosaic'|'blur'), strength (10~100%) — 아래 요소를 가린다 (blur.js)
  */
 export const state = {
   doc: { pages: [] },

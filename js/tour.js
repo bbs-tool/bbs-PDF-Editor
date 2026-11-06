@@ -8,7 +8,7 @@ const SEEN_KEY = 'pdf-editor.tourSeen';
 // extra: 같은 단계에서 따로 띄우는 말풍선 { target, title, text }
 const STEPS = [
   {
-    title: 'PDF 편집기에 오신 것을 환영합니다',
+    title: "BB's PDF Editor에 오신 것을 환영합니다",
     text: '주요 기능을 차례로 안내합니다. 파일은 서버로 보내지 않고 이 브라우저 안에서만 처리합니다.',
   },
   {
@@ -19,10 +19,11 @@ const STEPS = [
     </ul>`,
   },
   {
-    target: ['#btnText', '#btnRect', '#btnEllipse', '#btnUndo', '#btnRedo', '.toolbar .zoom'], title: '편집 도구',
+    target: ['#btnText', '#btnRect', '#btnEllipse', '#btnBlur', '#btnUndo', '#btnRedo', '.toolbar .zoom'], title: '편집 도구',
     text: `<ul>
       <li><b>텍스트</b> — 상자를 더블클릭해 글자를 고치고, 폰트·크기·색은 오른쪽 패널에서 바꿉니다.</li>
-      <li><b>네모·동그라미</b> — 채우기·테두리를 바꿀 수 있고, 흰 네모로 원본 글자를 가릴 때도 씁니다.</li>
+      <li><b>네모·동그라미</b> — 버튼을 누른 뒤 페이지 위를 <em class="em-red">끌어서</em> 원하는 위치·크기로 그립니다 (Shift: 정사각형·정원, Esc: 취소). 흰 네모로 원본 글자를 가릴 때도 씁니다.</li>
+      <li><b>모자이크·블러</b> — 가릴 영역을 끌어서 정하면 그 부분을 모자이크·블러로 가립니다. 효과·모양(네모·동그라미)·강도는 오른쪽 패널에서 고릅니다.</li>
       <li><b>↶ ↷</b> — 실행 취소·다시 실행 (Ctrl+Z / Ctrl+Y)</li>
       <li><b>− + 맞춤</b> — 화면 확대·축소. 저장 품질과는 관계없습니다.</li>
     </ul>`,

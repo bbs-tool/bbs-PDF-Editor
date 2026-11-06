@@ -49,7 +49,7 @@ export async function exportPdf(doc) {
 
   const out = await PDFDocument.create();
   out.registerFontkit(window.fontkit);
-  out.setProducer('PDF 편집기');
+  out.setProducer("BB's PDF Editor");
 
   const embeddedPages = new Map();
   const embeddedImages = new Map();

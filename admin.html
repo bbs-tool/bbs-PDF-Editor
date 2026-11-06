@@ -4,14 +4,14 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex">
-  <title>PDF 편집기 관리자</title>
+  <title>BB's PDF Editor 관리자</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='5' y='2' width='22' height='28' rx='3' fill='%232563eb'/%3E%3Cpath d='M10 11h12M10 16h12M10 21h8' stroke='white' stroke-width='2'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="css/style.css">
   <link rel="stylesheet" href="css/admin.css">
 </head>
 <body class="admin">
   <header class="toolbar">
-    <div class="brand">PDF 편집기 관리자</div>
+    <div class="brand" aria-label="BB's PDF Editor 관리자"><span class="brand-bb">BB's</span><span class="brand-name">PDF Editor</span><span class="brand-sub">관리자</span></div>
     <div class="spacer"></div>
     <a class="link-btn" href="index.html">편집기로 돌아가기</a>
     <button id="btnLogout" hidden>로그아웃</button>
@@ -46,7 +46,29 @@
           </form>
         </section>
 
+        <!-- 공지사항 등록 -->
+        <section class="card notice-card">
+          <h3><span id="noticeFormTitle">공지사항 등록</span> <span class="muted">편집기 오른쪽 아래 공지 버튼에 표시</span></h3>
+          <form id="noticeForm" class="stack">
+            <label>제목<input type="text" id="noticeTitleInput" required maxlength="60" autocomplete="off" placeholder="예: 11월 업데이트 안내"></label>
+            <label>내용 <span class="muted" id="noticeBodyCount">0/3000</span>
+              <textarea id="noticeBodyInput" required maxlength="3000" rows="6" placeholder="줄바꿈은 그대로 보입니다"></textarea></label>
+            <div class="btn-row end">
+              <button type="button" id="noticeCancel" hidden>수정 취소</button>
+              <button type="submit" class="primary" id="noticeSubmit">등록</button>
+            </div>
+          </form>
+        </section>
       </div>
+
+      <!-- 공지사항 목록 -->
+      <section class="card">
+        <h3>공지사항 목록 <span class="muted" id="noticeCount"></span></h3>
+        <table class="data" id="noticeTable">
+          <thead><tr><th>제목</th><th class="date-col">등록일</th><th class="act-col"></th></tr></thead>
+          <tbody id="noticeRows"></tbody>
+        </table>
+      </section>
 
       <!-- 이용 현황 -->
       <section class="card">
