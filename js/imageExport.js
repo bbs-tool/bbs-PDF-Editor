@@ -28,7 +28,7 @@ export async function renderPdfToImages(pdfBytes, { format = 'png', dpi = 300, b
       canvas.height = Math.floor(viewport.height);
       // 배경은 흰색 (pdf.js 기본값). 주석은 저장 PDF에 없으므로 그대로 그린다.
       const ctx = canvas.getContext('2d', { willReadFrequently: background === 'all' });
-      await page.render({ canvasContext: ctx, viewport, ...(transparent && { background: 'rgba(0,0,0,0)' }) }).promise;
+      await renderTiled(page, viewport, ctx, canvas.width, canvas.height, transparent);
       if (transparent && background === 'all') clearWhite(ctx, canvas.width, canvas.height);
       const blob = await new Promise(r => canvas.toBlob(r, mime, 0.92));
       // dpi: 너무 커서 낮춘 경우 실제로 쓴 해상도
@@ -40,6 +40,33 @@ export async function renderPdfToImages(pdfBytes, { format = 'png', dpi = 300, b
     pdf.destroy();
   }
   return out;
+}
+
+/**
+ * 페이지를 TILE px 이하 조각으로 나눠 그린 뒤 이어 붙인다.
+ * pdf.js 3.11은 투명 효과(소프트 마스크)가 걸린 영역이 4096px을 넘으면 마스크를 잘못된 위치에서 읽어
+ * 그 안의 사진·그림이 통째로 사라진다. 조각 캔버스가 4096px 이하면 그 영역도 조각 안으로 잘려서 문제가 없다.
+ */
+const TILE = 4000;
+async function renderTiled(page, viewport, ctx, width, height, transparent) {
+  const tile = document.createElement('canvas');
+  try {
+    for (let y = 0; y < height; y += TILE) {
+      for (let x = 0; x < width; x += TILE) {
+        tile.width = Math.min(TILE, width - x); // 크기를 다시 정하면 내용도 지워진다
+        tile.height = Math.min(TILE, height - y);
+        await page.render({
+          canvasContext: tile.getContext('2d'),
+          viewport,
+          transform: [1, 0, 0, 1, -x, -y], // 이 조각에 해당하는 부분이 왼쪽 위에 오도록
+          ...(transparent && { background: 'rgba(0,0,0,0)' }),
+        }).promise;
+        ctx.drawImage(tile, x, y);
+      }
+    }
+  } finally {
+    tile.width = tile.height = 0;
+  }
 }
 
 // 흰색에 가까운 픽셀을 투명하게. 경계가 거칠지 않도록 245~255는 완전 투명, 225~245는 점점 흐리게.
