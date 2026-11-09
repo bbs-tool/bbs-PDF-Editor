@@ -3,10 +3,12 @@
 import { assets, uid, PX_TO_PT } from './state.js';
 import { getPdfDocument } from './pdfRender.js';
 
-export const ACCEPT_FILES = 'application/pdf,.pdf,image/png,image/jpeg,image/webp,image/gif,image/bmp';
+export const ACCEPT_FILES = 'application/pdf,.pdf,.ai,image/png,image/jpeg,image/webp,image/gif,image/bmp';
 export const ACCEPT_IMAGES = 'image/png,image/jpeg,image/webp,image/gif,image/bmp';
 
 export const isPdf = f => f.type === 'application/pdf' || /\.pdf$/i.test(f.name || '');
+// Illustrator 파일: 'PDF 호환 파일 만들기'(기본값)로 저장했으면 안에 PDF가 들어 있어 PDF처럼 열 수 있다
+export const isAi = f => /\.ai$/i.test(f.name || '');
 export const isImage = f => /^image\/(png|jpeg|webp|gif|bmp)$/.test(f.type) || /\.(png|jpe?g|webp|gif|bmp)$/i.test(f.name || '');
 
 // Word·PowerPoint·한글 문서 (아직 직접 열지 못해 PDF로 저장하도록 안내만 한다)
@@ -43,6 +45,22 @@ export async function importPdf(file) {
       throw new Error(`${file.name}: 편집기 파일을 불러오지 못했습니다. run-local.bat 검은 창이 닫혔다면 다시 실행한 뒤 새로고침해 주세요.`);
     }
     throw new Error(`${file.name}: PDF를 열 수 없습니다 (${e.message})`);
+  }
+}
+
+/**
+ * Illustrator(.ai) 파일 → PDF와 같은 원본 요소 목록 (아트보드마다 한 페이지)
+ * PDF 호환 없이 저장한 파일(예전 PostScript 방식)은 열 수 없으므로 다시 저장하는 방법을 안내한다.
+ */
+export async function importAi(file) {
+  const head = new TextDecoder('latin1').decode(new Uint8Array(await file.slice(0, 1024).arrayBuffer()));
+  if (!head.includes('%PDF-')) {
+    throw new Error(`${file.name}: PDF 호환 정보가 없는 AI 파일이라 열 수 없습니다. Illustrator에서 [다른 이름으로 저장 → Adobe PDF]로 저장하거나, AI로 저장할 때 'PDF 호환 파일 만들기'를 켠 뒤 다시 열어 주세요.`);
+  }
+  try {
+    return await importPdf(file);
+  } catch (e) {
+    throw new Error(e.message.replace('PDF를 열 수 없습니다', 'AI 파일을 열 수 없습니다'));
   }
 }
 

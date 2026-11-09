@@ -2,7 +2,7 @@
 
 import { state, assets, uid, commit, emit, undo as historyUndo, redo as historyRedo, currentPage, findObject, PT_PER_MM, A4_PT, MAX_PAGE_PT } from './state.js';
 import { layoutPage, rotatePageCW, baseOf, uncropped, NO_MARGIN } from './pageSize.js';
-import { importPdf, importImage, importImageAsset, isPdf, isImage, isOffice } from './importer.js';
+import { importPdf, importAi, importImage, importImageAsset, isPdf, isAi, isImage, isOffice } from './importer.js';
 import { flattenBlurs, BLUR_DEFAULTS } from './blur.js';
 import { exportPdf } from './exporter.js';
 import { renderPdfToImages } from './imageExport.js';
@@ -60,7 +60,7 @@ export async function openFiles(files, at, { askSplit } = {}) {
   const errors = [];
   for (const file of files) {
     try {
-      const items = isPdf(file) ? await importPdf(file) : isImage(file) ? await importImage(file) : null;
+      const items = isPdf(file) ? await importPdf(file) : isAi(file) ? await importAi(file) : isImage(file) ? await importImage(file) : null;
       if (!items && isOffice(file)) throw new Error(`${file.name}: Word·PPT·한글 파일은 아직 바로 열 수 없습니다. 해당 프로그램에서 [다른 이름으로 저장 → PDF]로 저장한 뒤 열어 주세요.`);
       if (!items) throw new Error(`${file.name}: 지원하지 않는 형식입니다`);
       const long = items.filter(item => item.natH > MAX_PAGE_PT);

@@ -12,7 +12,7 @@
     <div class="brand" aria-label="BB's PDF Editor"><span class="brand-bb">BB's</span><span class="brand-name">PDF Editor</span></div>
 
     <div class="group">
-      <button id="btnOpen" class="primary" title="PDF·이미지를 새 페이지로 추가">파일 열기</button>
+      <button id="btnOpen" class="primary" title="PDF·AI·이미지를 새 페이지로 추가">파일 열기</button>
       <button id="btnInsertImage" title="현재 페이지 위에 이미지 올리기">이미지 삽입</button>
       <button id="btnText" title="텍스트 상자 추가">텍스트</button>
       <button id="btnRect" title="네모 추가">▭ 네모</button>
@@ -57,7 +57,7 @@
 
     <section class="stage" id="stage">
       <div class="empty" id="emptyState">
-        <p class="empty-title">PDF나 이미지를 여기로 끌어다 놓으세요</p>
+        <p class="empty-title">PDF·AI·이미지를 여기로 끌어다 놓으세요</p>
         <p class="empty-sub">또는 위의 <b>파일 열기</b>를 누르세요. 파일은 서버로 보내지 않고 이 브라우저 안에서만 처리합니다.</p>
       </div>
       <div class="canvas-wrap" id="canvasWrap"><canvas id="editorCanvas"></canvas></div>
@@ -312,6 +312,7 @@
           <option value="96">96 dpi (화면용)</option>
           <option value="150">150 dpi (문서 공유)</option>
           <option value="300" selected>300 dpi (인쇄용)</option>
+          <option value="600">600 dpi (고화질 · 파일 큼)</option>
         </select>
       </label>
       <div class="btn-row end">

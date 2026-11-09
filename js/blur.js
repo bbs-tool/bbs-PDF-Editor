@@ -7,6 +7,7 @@
 import { assets, uid } from './state.js';
 import { exportPdf } from './exporter.js';
 import { openPdfBytes } from './pdfRender.js';
+import { renderTiled } from './imageExport.js';
 
 export const BLUR_DEFAULTS = { shape: 'rect', mode: 'mosaic', strength: 50 };
 
@@ -132,19 +133,17 @@ export const hasBlur = page => page.objects.some(o => o.type === 'blur');
 const MAX_SIDE = 16000;
 const MAX_PIXELS = 48e6;
 
-/** objs만 그린 PDF를 만들어 투명 배경으로 ctx에 겹친다 */
+/**
+ * objs만 그린 PDF를 만들어 투명 배경으로 ctx에 겹친다.
+ * 큰 페이지에서 pdf.js 소프트 마스크 버그(4096px 초과 시 사진이 사라짐)를 피하려고 이미지 저장과 같은 조각 그리기를 쓴다.
+ */
 async function drawSegment(ctx, page, objs, scale) {
   const bytes = await exportPdf({ pages: [{ width: page.width, height: page.height, objects: objs }] });
   const pdf = await openPdfBytes(bytes);
   try {
     const p = await pdf.getPage(1);
     const viewport = p.getViewport({ scale });
-    const c = document.createElement('canvas');
-    c.width = ctx.canvas.width;
-    c.height = ctx.canvas.height;
-    await p.render({ canvasContext: c.getContext('2d'), viewport, background: 'rgba(0,0,0,0)' }).promise;
-    ctx.drawImage(c, 0, 0);
-    c.width = c.height = 0;
+    await renderTiled(p, viewport, ctx, ctx.canvas.width, ctx.canvas.height, true);
     p.cleanup();
   } finally {
     pdf.destroy();

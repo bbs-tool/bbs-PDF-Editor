@@ -46,9 +46,10 @@ export async function renderPdfToImages(pdfBytes, { format = 'png', dpi = 300, b
  * 페이지를 TILE px 이하 조각으로 나눠 그린 뒤 이어 붙인다.
  * pdf.js 3.11은 투명 효과(소프트 마스크)가 걸린 영역이 4096px을 넘으면 마스크를 잘못된 위치에서 읽어
  * 그 안의 사진·그림이 통째로 사라진다. 조각 캔버스가 4096px 이하면 그 영역도 조각 안으로 잘려서 문제가 없다.
+ * transparent면 조각을 투명 배경으로 그려 ctx에 이미 있는 내용 위에 겹친다 (blur.js 저장용 합치기에서도 사용).
  */
 const TILE = 4000;
-async function renderTiled(page, viewport, ctx, width, height, transparent) {
+export async function renderTiled(page, viewport, ctx, width, height, transparent) {
   const tile = document.createElement('canvas');
   try {
     for (let y = 0; y < height; y += TILE) {

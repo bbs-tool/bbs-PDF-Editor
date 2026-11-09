@@ -1003,7 +1003,7 @@ async function doExportImages() {
     const fileName = img => `${name}_${img.pageIndex + 1}쪽${img.merged ? '_합침' : ''}.${format}`;
     // 합친 긴 이미지가 브라우저 한계를 넘으면 해상도를 낮춰 만든다 → 알려 준다
     const lowered = images.filter(img => img.dpi < dpi - 1);
-    if (lowered.length) setTimeout(() => toast(`긴 페이지라 브라우저 한계(세로 32000px) 안에 맞추느라 해상도를 ${Math.min(...lowered.map(i => i.dpi))}dpi로 낮췄습니다`, 6000), 2600);
+    if (lowered.length) setTimeout(() => toast(`페이지가 커서 브라우저 한계(한 변 32000px, 6400만 픽셀) 안에 맞추느라 해상도를 ${Math.min(...lowered.map(i => i.dpi))}dpi로 낮췄습니다`, 6000), 2600);
     if (images.length === 1) {
       download(images[0].bytes, fileName(images[0]), format === 'jpg' ? 'image/jpeg' : 'image/png');
     } else {
