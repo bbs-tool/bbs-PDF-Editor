@@ -61,7 +61,11 @@ export async function openFiles(files, at, { askSplit } = {}) {
   for (const file of files) {
     try {
       const items = isPdf(file) ? await importPdf(file) : isAi(file) ? await importAi(file) : isImage(file) ? await importImage(file) : null;
-      if (!items && isOffice(file)) throw new Error(`${file.name}: Word·PPT·Excel·한글 파일은 아직 바로 열 수 없습니다. 해당 프로그램에서 [다른 이름으로 저장 → PDF]로 저장한 뒤 열어 주세요.`);
+      if (!items && isOffice(file)) {
+        // Word·PPT·Excel은 구글 로그인을 쓰면 main.js에서 PDF로 바꿔 들어온다. 여기 오는 건 한글 파일이거나 구글 로그인을 안 쓰는 경우
+        const what = /\.hwpx?$/i.test(file.name) ? '한글(HWP) 파일은' : 'Word·PPT·Excel 파일은 지금 설정에서';
+        throw new Error(`${file.name}: ${what} 바로 열 수 없습니다. 해당 프로그램에서 [다른 이름으로 저장 → PDF]로 저장한 뒤 열어 주세요.`);
+      }
       if (!items) throw new Error(`${file.name}: 지원하지 않는 형식입니다`);
       const long = items.filter(item => item.natH > MAX_PAGE_PT);
       const mode = long.length && askSplit ? await askSplit({ name: file.name, w: long[0].natW, h: long[0].natH, count: long.length }) : 'none';

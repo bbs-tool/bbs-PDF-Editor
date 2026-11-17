@@ -39,7 +39,7 @@ export function clearSession() {
 export const inAppBrowser = () => /KAKAOTALK|NAVER\(inapp|Instagram|FBAN|FBAV|Line\/|DaumApps|everytimeApp|; wv\)/i.test(navigator.userAgent);
 
 let gisLoading = null;
-function loadGoogle() {
+export function loadGoogle() {
   gisLoading ||= new Promise((resolve, reject) => {
     if (window.google?.accounts?.id) return resolve(window.google);
     const s = document.createElement('script');

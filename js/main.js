@@ -15,6 +15,7 @@ import { ensureEntry, trackExport } from './gate.js';
 import { bindAdminAuth, getAdminToken } from './adminAuth.js';
 import { TRACKING_URL } from './config.js';
 import { googleMode, getSession, clearSession } from './account.js';
+import { canConvert, ACCEPT_OFFICE, prepareDrive, requestDriveToken, convertToPdf } from './drive.js';
 import { extensions } from './extensions/index.js';
 import { initNotices } from './notice.js';
 import { BLUR_DEFAULTS, hasBlur } from './blur.js';
@@ -80,7 +81,7 @@ const selectedObjects = () => selection.map(id => findObject(id)?.obj).filter(Bo
 async function boot() {
   // 입장 확인을 마치기 전에는 편집기 기능을 연결하지 않는다 (버튼·단축키·끌어다 놓기 모두 동작 안 함)
   await ensureEntry();
-  $('#fileOpen').accept = ACCEPT_FILES;
+  $('#fileOpen').accept = googleMode() ? `${ACCEPT_FILES},${ACCEPT_OFFICE}` : ACCEPT_FILES; // 구글 로그인을 쓰면 Office 파일도 (PDF로 변환)
   $('#fileImage').accept = ACCEPT_IMAGES;
   await withBusy('폰트 불러오는 중…', initFonts);
 
@@ -174,10 +175,59 @@ function refreshUi() {
 
 async function openFilesUi(files, at) {
   if (!files.length) return;
+  const firstName = files[0].name;
+  let convertErrors = [];
+  // Word·PPT·Excel은 구글 드라이브로 PDF로 바꾼 뒤 원래 순서 자리에 넣는다
+  const office = files.filter(canConvert);
+  if (office.length) {
+    const result = await convertOfficeUi(office);
+    if (!result) {
+      files = files.filter(f => !office.includes(f));
+    } else {
+      const byFile = new Map(result.pdfs.map(r => [r.source, r.pdf]));
+      files = files.flatMap(f => (office.includes(f) ? (byFile.has(f) ? [byFile.get(f)] : []) : [f]));
+      convertErrors = result.errors;
+    }
+    if (!files.length) {
+      if (convertErrors.length) toast(convertErrors.join('\n'), 7000);
+      return;
+    }
+  }
   const { added, errors } = await withBusy('파일 여는 중…', () => cmd.openFiles(files, at, { askSplit }));
-  if (!docName && added) docName = files[0].name.replace(/\.[^.]+$/, '');
-  if (errors.length) toast(errors.join('\n'), 6000);
-  else if (added) toast(`${added}페이지를 추가했습니다`);
+  if (!docName && added) docName = firstName.replace(/\.[^.]+$/, '');
+  const all = [...convertErrors, ...errors];
+  if (all.length) toast(all.join('\n'), 7000);
+  else if (added) toast(`${added}페이지를 추가했습니다${office.length ? ' (PDF로 변환해 열었습니다)' : ''}`);
+}
+
+/**
+ * Word·PPT·Excel → PDF 변환 확인 창. 취소·실패하면 null, 아니면 { pdfs, errors }
+ * 구글 허용 창(팝업)은 버튼을 누른 그 순간에 열어야 차단되지 않으므로, 확인 버튼의 클릭 처리에서 바로 요청한다.
+ */
+async function convertOfficeUi(files) {
+  try {
+    await withBusy('구글 드라이브 연결 준비 중…', prepareDrive);
+  } catch (e) {
+    toast(`구글 드라이브에 연결하지 못했습니다: ${e.message}`, 6000);
+    return null;
+  }
+  const dialog = $('#officeDialog');
+  $('#officeMsg').textContent = files.length === 1 ? `‘${files[0].name}’` : `${files.map(f => `‘${f.name}’`).join(', ')} (${files.length}개)`;
+  let tokenPromise = null;
+  $('#officeOk').onclick = () => { tokenPromise = requestDriveToken(); };
+  const choice = await choose(dialog);
+  if (choice !== 'ok' || !tokenPromise) return null;
+  try {
+    // 허용 창을 그냥 두고 떠나는 경우를 위해 3분 뒤에는 포기한다
+    const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('구글 드라이브 허용을 기다리다 시간이 지났습니다. 다시 시도해 주세요')), 180000));
+    const accessToken = await withBusy('구글 드라이브 허용을 기다리는 중…', () => Promise.race([tokenPromise, timeout]));
+    return await withBusy('PDF로 변환하는 중…', () => convertToPdf(files, accessToken, {
+      onProgress: (i, n, name) => { $('#busyMsg').textContent = `PDF로 변환하는 중… (${i}/${n}) ${name}`; },
+    }));
+  } catch (e) {
+    toast(e.message, 6000);
+    return null;
+  }
 }
 
 /** 이미지를 현재 페이지 위에 올릴지, 새 페이지로 추가할지 묻고 넣는다 (페이지가 없으면 새 페이지로) */
