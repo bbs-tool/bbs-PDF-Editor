@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#ffffff">
   <title>BB's PDF Editor</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='5' y='2' width='22' height='28' rx='3' fill='%232563eb'/%3E%3Cpath d='M10 11h12M10 16h12M10 21h8' stroke='white' stroke-width='2'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/style.css?v=20261117b">
 </head>
 <body>
   <header class="toolbar">
@@ -44,7 +44,7 @@
     <!-- 휴대폰에서는 ⋯ 메뉴 안으로 들어간다 -->
     <div class="more-menu" id="moreMenu">
       <button id="btnInsertImageMore" class="phone-only" title="현재 페이지 위에 이미지 올리기">이미지 삽입</button>
-      <button id="btnAdmin" title="관리자 화면 (메일 인증)" hidden>관리자 모드</button>
+      <button id="btnAdmin" title="관리자 화면 (메일 인증)" hidden>관리자<span class="long"> 모드</span></button>
       <button id="btnAccount" class="account-btn" title="로그인한 구글 계정 (누르면 로그아웃)" hidden></button>
       <button id="btnHelp" title="사용법 안내 다시 보기">튜토리얼</button>
       <button id="btnExportImage" title="페이지를 PNG·JPG 이미지로 저장">이미지 저장</button>
@@ -509,6 +509,6 @@
   <script src="vendor/fontkit.umd.min.js"></script>
   <script src="vendor/fabric.min.js"></script>
   <script src="vendor/Sortable.min.js"></script>
-  <script type="module" src="js/main.js"></script>
+  <script type="module" src="js/main.js?v=20261117b"></script>
 </body>
 </html>

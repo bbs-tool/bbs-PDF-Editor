@@ -62,7 +62,7 @@ const STEPS = [
   },
 ];
 
-// 휴대폰 화면(폭 760px 이하)용 짧은 안내
+// 휴대폰 화면(폭 900px 이하)용 짧은 안내
 const PHONE_STEPS = [
   {
     title: "BB's PDF Editor에 오신 것을 환영합니다",
@@ -95,7 +95,7 @@ const PHONE_STEPS = [
   },
 ];
 
-const phone = () => matchMedia('(max-width: 760px)').matches;
+const phone = () => matchMedia('(max-width: 900px)').matches;
 const steps = () => (phone() ? PHONE_STEPS : STEPS);
 
 let root = null;

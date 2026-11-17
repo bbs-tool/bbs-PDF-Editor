@@ -279,6 +279,36 @@ body { touch-action: pan-x pan-y; }
   .acts, .page-check { opacity: 1; }
 }
 
+/* 노트북처럼 폭이 좁은 PC: 버튼 글자를 줄여 위쪽 도구가 한 줄에 들어가게 */
+@media (min-width: 901px) and (max-width: 1500px) {
+  .toolbar { gap: 8px; }
+  .toolbar .group { gap: 4px; padding-left: 8px; }
+  .toolbar .long { display: none; }
+  .toolbar button { padding: 6px 10px; }
+  .toolbar button.icon { width: 32px; padding: 6px 0; }
+  .account-btn { max-width: 100px; }
+}
+@media (min-width: 901px) and (max-width: 1400px) {
+  .brand-name { display: none; }
+}
+/* 1300px 이하: 관리자·계정·튜토리얼·이미지 저장은 ⋯ 메뉴로 (휴대폰과 같은 방식) */
+@media (max-width: 1000px) {
+  #btnZoomIn, #btnZoomOut { display: none; }
+}
+@media (max-width: 1300px) {
+  .toolbar { position: relative; }
+  #btnMore { display: inline-block; width: 36px; font-size: 18px; }
+  .more-menu {
+    display: none; position: absolute; top: calc(100% + 4px); right: 8px; z-index: 49; min-width: 190px;
+    flex-direction: column; gap: 2px; padding: 6px; background: var(--surface);
+    border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.18);
+  }
+  .more-menu.open { display: flex; }
+  .more-menu button { width: 100%; text-align: left; border: 0; padding: 10px 12px; }
+  .more-menu .account-btn { max-width: none; color: var(--muted); }
+  .more-menu .long { display: inline; }
+}
+
 @media (max-width: 900px) {
   .layout { grid-template-columns: 140px 1fr; }
   .panel { position: fixed; right: 0; top: auto; bottom: 0; width: 100%; max-height: 45vh; border-top: 1px solid var(--border); }
@@ -288,8 +318,8 @@ body { touch-action: pan-x pan-y; }
   body:not(.admin) .notice-panel { bottom: calc(45vh + 68px); max-height: calc(55vh - 90px); }
 }
 
-/* 휴대폰 (폭 760px 이하): 위쪽은 파일 열기·확대·저장·⋯, 편집 도구는 아래 막대, 페이지 목록·설정은 서랍 */
-@media (max-width: 760px) {
+/* 휴대폰·세로 태블릿 (폭 900px 이하): 위쪽은 파일 열기·확대·저장·⋯, 편집 도구는 아래 막대, 페이지 목록·설정은 서랍 */
+@media (max-width: 900px) {
   :root { --dock-h: 58px; }
   .toolbar { flex-wrap: nowrap; gap: 6px; padding: 6px 8px; position: relative; padding-top: max(6px, env(safe-area-inset-top)); }
   .toolbar .group { border-left: 0; padding-left: 0; }

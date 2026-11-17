@@ -1294,9 +1294,9 @@ function bindKeyboard() {
 }
 
 // ── 휴대폰 화면 ───────────────────────────────────────
-// 폭 760px 이하: 페이지 목록(왼쪽 서랍)·설정(아래 시트)은 버튼으로 열고, ⋯ 메뉴, 선택 요소 빠른 동작 막대
+// 폭 900px 이하: 페이지 목록(왼쪽 서랍)·설정(아래 시트)은 버튼으로 열고, ⋯ 메뉴, 선택 요소 빠른 동작 막대
 
-const PHONE = matchMedia('(max-width: 760px)');
+const PHONE = matchMedia('(max-width: 900px)');
 
 function closeSheets() {
   document.body.classList.remove('show-pages', 'show-panel');
