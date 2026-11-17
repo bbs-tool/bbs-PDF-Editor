@@ -4,12 +4,16 @@
 import { TRACKING_URL } from './config.js';
 import { callServer } from './gate.js';
 import { bindAdminAuth, getAdminToken, clearAdminToken } from './adminAuth.js';
+import { googleMode, getSession, clearSession, renderGoogleButton } from './account.js';
 
 const $ = s => document.querySelector(s);
 
-let token = '';
+let token = ''; // 예전 메일 인증 토큰 (구글 로그인에서는 쓰지 않음)
 let data = null;
 let period = 'day';
+const GOOGLE = googleMode();
+// 구글 로그인: 편집기와 같은 브라우저 저장소의 로그인 정보를 함께 쓴다 (관리자 계정일 때만 열림)
+const adminSession = () => (GOOGLE ? getSession() : null);
 
 function toast(msg, ms = 2600) {
   const el = $('#toast');
@@ -25,9 +29,9 @@ async function withBusy(msg, fn) {
   try { return await fn(); } finally { $('#busy').hidden = true; }
 }
 
-const adminCall = (op, extra = {}) => callServer({ action: 'admin', token, op, ...extra });
+const adminCall = (op, extra = {}) => callServer({ action: 'admin', token, session: adminSession()?.session || '', op, ...extra });
 
-const ERRORS = { missing: '값을 입력해 주세요.' };
+const ERRORS = { missing: '값을 입력해 주세요.', owner: '관리자 계정은 바꿀 수 없습니다.' };
 const errorText = r => ERRORS[r.error] || `처리하지 못했습니다 (${r.error || '알 수 없는 오류'})`;
 
 // ── 인증 ──────────────────────────────────────────────
@@ -37,6 +41,7 @@ function showAuth(message) {
   token = '';
   $('#dashboard').hidden = true;
   $('#btnLogout').hidden = true;
+  if (GOOGLE) return showGoogleAuth(message);
   $('#loginCard').hidden = false;
   bindAdminAuth($('#loginCard'), t => open(t).catch(err => toast(`서버에 연결할 수 없습니다 (${err.message})`)));
   if (message) {
@@ -45,13 +50,32 @@ function showAuth(message) {
   }
 }
 
+/** 구글 로그인 화면: 관리자 계정으로 로그인하면 바로 대시보드를 연다 */
+function showGoogleAuth(message) {
+  $('#loginCard').hidden = true;
+  $('#googleLoginCard').hidden = false;
+  const err = $('#googleLoginError');
+  const show = text => { err.textContent = text || ''; err.hidden = !text; };
+  show(message);
+  renderGoogleButton($('#adminGoogleButton'), {
+    forAdmin: true,
+    onDone: () => open('').catch(e => toast(`서버에 연결할 수 없습니다 (${e.message})`)),
+    onError: show,
+    onBusy: on => { if (on) show('확인하는 중…'); },
+  });
+}
+
 /** 토큰으로 이용 현황을 받아 대시보드를 연다. 토큰이 만료됐으면 인증 화면으로 */
 async function open(t) {
   token = t;
   const r = await withBusy('불러오는 중…', () => adminCall('stats'));
-  if (!r.ok) return showAuth(r.error === 'not-authorized' ? '인증 시간이 지났습니다. 다시 인증해 주세요.' : errorText(r));
+  if (!r.ok) {
+    if (GOOGLE && r.error === 'not-authorized') return showAuth(adminSession() ? '관리자 계정이 아닙니다. 관리자 구글 계정으로 로그인해 주세요.' : '');
+    return showAuth(r.error === 'not-authorized' ? '인증 시간이 지났습니다. 다시 인증해 주세요.' : errorText(r));
+  }
   data = r;
   $('#loginCard').hidden = true;
+  $('#googleLoginCard').hidden = true;
   $('#dashboard').hidden = false;
   $('#btnLogout').hidden = false;
   render();
@@ -121,6 +145,10 @@ function emptyRow(cols, text) {
 }
 
 function render() {
+  // 구글 로그인을 쓰면 입장 코드 대신 입장 방식·사용자 관리를 보인다
+  $('#codeCard').hidden = $('#userSection').hidden = GOOGLE;
+  $('#accessCard').hidden = $('#accountSection').hidden = !GOOGLE;
+  if (GOOGLE) renderAccounts();
   $('#currentCode').textContent = data.code;
   $('#codeVersion').textContent = `(버전 ${data.codeVersion})`;
   for (const b of document.querySelectorAll('#periodTabs button')) b.classList.toggle('active', b.dataset.period === period);
@@ -163,6 +191,109 @@ function render() {
     : [emptyRow(5, '아직 입장한 이용자가 없습니다')]));
 
   renderNotices();
+}
+
+// ── 구글 계정 사용자 ──────────────────────────────────
+
+const STATUS_LABEL = { allowed: '허용', pending: '승인 대기', blocked: '차단' };
+const ACCESS_HINT = {
+  list: '허용 목록에 있는 계정만 들어올 수 있습니다. 처음 로그인한 사람은 [승인 대기]로 올라오고, 관리자 메일로 알림이 갑니다.',
+  open: '구글 계정만 있으면 누구나 들어옵니다 (차단한 계정 제외). 들어온 사람은 자동으로 [허용]이 되어, 나중에 [허용한 사람만]으로 바꿔도 계속 쓸 수 있습니다.',
+};
+
+function renderAccounts() {
+  if (!Array.isArray(data.users)) {
+    $('#accountRows').replaceChildren(emptyRow(6, '기록 서버(Apps Script)를 새 버전으로 다시 배포해야 사용자 관리를 쓸 수 있습니다'));
+    return;
+  }
+  for (const b of document.querySelectorAll('#accessMode button')) b.classList.toggle('active', b.dataset.mode === data.accessMode);
+  $('#accessHint').textContent = ACCESS_HINT[data.accessMode] || '';
+  if (!data.google) $('#accessHint').textContent += ' ※ 기록 서버(Code.gs)의 GOOGLE_CLIENT_ID가 비어 있어 아직 구글 로그인이 동작하지 않습니다.';
+
+  const lastSave = new Map();
+  for (const ev of data.events) {
+    const id = String(ev.clientId).toLowerCase();
+    if (!lastSave.has(id) || ev.time > lastSave.get(id)) lastSave.set(id, ev.time);
+  }
+  const owner = String(data.owner || '').toLowerCase();
+  const order = { pending: 0, allowed: 1, blocked: 2 };
+  const users = [...data.users].sort((a, b) => order[a.status] - order[b.status] || ((b.last || '') > (a.last || '') ? 1 : -1));
+  const pending = users.filter(u => u.status === 'pending').length;
+  $('#accountCount').textContent = `${users.length}명${pending ? ` · 승인 대기 ${pending}명` : ''}`;
+  $('#accountRows').replaceChildren(...(users.length ? users.map(u => {
+    const tr = document.createElement('tr');
+    if (u.status === 'pending') tr.className = 'pending';
+    const who = cell(u.name || '(아직 로그인 전)');
+    who.append(Object.assign(document.createElement('div'), { className: 'email-col', textContent: u.email }));
+    const st = cell('');
+    st.append(Object.assign(document.createElement('span'), { className: `status ${u.status}`, textContent: u.email === owner ? '관리자' : STATUS_LABEL[u.status] }));
+    const acts = cell('', 'act-col');
+    if (u.email !== owner) {
+      const btn = (label, status, cls = '') => {
+        const b = Object.assign(document.createElement('button'), { className: `small ${cls}`, textContent: label });
+        b.onclick = () => setUser(u, status);
+        acts.append(b);
+      };
+      if (u.status !== 'allowed') btn('허용', 'allowed', 'primary');
+      if (u.status !== 'blocked') btn('차단', 'blocked', 'danger');
+      btn('목록에서 삭제', 'remove');
+    }
+    tr.append(who, st, cell(fmt(u.first)), cell(fmt(u.last)), cell(fmt(lastSave.get(u.email))), acts);
+    return tr;
+  }) : [emptyRow(6, '아직 로그인한 사용자가 없습니다')]));
+}
+
+async function adminOp(op, extra, busyMsg) {
+  try {
+    const r = await withBusy(busyMsg, () => adminCall(op, extra));
+    if (!r.ok) {
+      if (r.error === 'not-authorized') showAuth('로그인이 만료되었습니다. 다시 로그인해 주세요.');
+      else toast(errorText(r));
+      return null;
+    }
+    return r;
+  } catch (err) {
+    toast(`서버에 연결할 수 없습니다 (${err.message})`);
+    return null;
+  }
+}
+
+async function setUser(u, status) {
+  const label = u.name ? `${u.name}(${u.email})` : u.email;
+  const ask = {
+    blocked: `${label} 계정을 차단할까요?\n다음 접속부터 편집기에 들어올 수 없습니다.`,
+    remove: `${label} 계정을 목록에서 지울까요?\n허용한 사람만 받는 중이면 다음에 로그인할 때 다시 승인 요청이 옵니다.`,
+  }[status];
+  if (ask && !confirm(ask)) return;
+  const r = await adminOp('userSet', { email: u.email, status }, '바꾸는 중…');
+  if (!r) return;
+  data.users = r.users;
+  renderAccounts();
+  toast({ allowed: '허용했습니다. 이제 로그인하면 바로 쓸 수 있습니다', blocked: '차단했습니다', remove: '목록에서 지웠습니다' }[status]);
+}
+
+function bindAccounts() {
+  $('#accessMode').onclick = async e => {
+    const mode = e.target.closest('button')?.dataset.mode;
+    if (!mode || mode === data.accessMode) return;
+    if (mode === 'open' && !confirm('구글 계정만 있으면 누구나 들어올 수 있게 바꿀까요?\n(차단한 계정은 계속 막힙니다)')) return;
+    const r = await adminOp('setAccess', { mode }, '바꾸는 중…');
+    if (!r) return;
+    data.accessMode = r.accessMode;
+    renderAccounts();
+    toast(r.accessMode === 'open' ? '이제 구글 계정이면 누구나 들어옵니다' : '이제 허용한 사람만 들어옵니다');
+  };
+  $('#userAddForm').onsubmit = async e => {
+    e.preventDefault();
+    const email = $('#userAddEmail').value.trim().toLowerCase();
+    if (!email) return;
+    const r = await adminOp('userSet', { email, status: 'allowed' }, '추가하는 중…');
+    if (!r) return;
+    data.users = r.users;
+    $('#userAddEmail').value = '';
+    renderAccounts();
+    toast(`${email}을(를) 허용 목록에 넣었습니다`);
+  };
 }
 
 // ── 공지사항 ──────────────────────────────────────────
@@ -266,8 +397,14 @@ function bindNotices() {
 
 function bind() {
   bindNotices();
+  bindAccounts();
   $('#btnLogout').onclick = async () => {
-    await adminCall('logout').catch(() => {});
+    if (GOOGLE) {
+      if (!confirm('로그아웃할까요?\n같은 브라우저의 편집기에서도 로그아웃됩니다.')) return;
+      clearSession();
+    } else {
+      await adminCall('logout').catch(() => {});
+    }
     showAuth();
     toast('로그아웃했습니다');
   };
@@ -301,6 +438,9 @@ bind();
 if (!TRACKING_URL) {
   $('#notConfigured').hidden = false;
   $('#loginCard').hidden = true;
+} else if (GOOGLE) {
+  if (adminSession()?.admin) open('').catch(() => showAuth());
+  else showAuth();
 } else {
   const saved = getAdminToken();
   if (saved) open(saved).catch(() => showAuth());

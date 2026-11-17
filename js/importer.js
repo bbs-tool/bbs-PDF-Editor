@@ -11,8 +11,8 @@ export const isPdf = f => f.type === 'application/pdf' || /\.pdf$/i.test(f.name 
 export const isAi = f => /\.ai$/i.test(f.name || '');
 export const isImage = f => /^image\/(png|jpeg|webp|gif|bmp)$/.test(f.type) || /\.(png|jpe?g|webp|gif|bmp)$/i.test(f.name || '');
 
-// Word·PowerPoint·한글 문서 (아직 직접 열지 못해 PDF로 저장하도록 안내만 한다)
-export const isOffice = f => /\.(docx?|pptx?|hwpx?|odt|odp)$/i.test(f.name || '');
+// Word·PowerPoint·Excel·한글 문서 (아직 직접 열지 못해 PDF로 저장하도록 안내만 한다)
+export const isOffice = f => /\.(docx?|pptx?|xlsx?|xlsm|csv|hwpx?|odt|odp|ods)$/i.test(f.name || '');
 
 export function baseElement(props) {
   // 원본도 처음부터 끌어서 옮길 수 있다. 고정하려면 속성 패널·우클릭 메뉴에서 잠근다.

@@ -43,7 +43,7 @@ export async function exportPdf(doc) {
       if (o.type !== 'text' || !o.text.trim()) continue;
       const k = `${o.fontFamily}|${o.bold ? 1 : 0}`;
       if (!fontBytes.has(k)) fontBytes.set(k, await getFontBytes(o.fontFamily, o.bold));
-      fontChars.set(k, (fontChars.get(k) || '') + o.text);
+      fontChars.set(k, (fontChars.get(k) || '') + o.text.replace(INVISIBLE, ''));
     }
   }
 
@@ -79,9 +79,13 @@ export async function exportPdf(doc) {
       const k = `${o.fontFamily}|${o.bold ? 1 : 0}`;
       if (!embeddedFonts.has(k)) {
         // 쓴 글자만 남긴 폰트를 넣는다. 실패하면 폰트 전체를 넣는다 (파일이 커질 뿐 결과는 같음).
+        // 줄인 폰트를 fontkit이 읽다가 깨지는 경우가 있어(예: 웹에서 복사한 글에 섞인 보이지 않는 글자 U+200B)
+        // 실제로 쓴 글자를 미리 배치해 보고, 안 되면 전체 폰트를 쓴다.
         let bytes = fontBytes.get(k);
         try {
-          bytes = await subsetFont(bytes, fontChars.get(k));
+          const small = await subsetFont(bytes, fontChars.get(k));
+          window.fontkit.create(small).layout(fontChars.get(k));
+          bytes = small;
         } catch (e) {
           console.warn('폰트 축소 실패, 전체 폰트를 넣습니다', e);
         }
@@ -108,6 +112,9 @@ export async function exportPdf(doc) {
   }
   return out.save();
 }
+
+// 화면에 안 보이는 폭 0 글자 (웹·메신저·Word에서 복사한 글에 자주 섞여 온다). PDF에는 넣지 않는다.
+const INVISIBLE = /[​-‍⁠﻿]/g;
 
 const objectsOf = page => (page.parts ? page.parts.flatMap(part => part.objects) : page.objects);
 
@@ -193,7 +200,7 @@ async function drawText(p, o, H, ctx, opacity) {
     const lh = tb.getHeightOfLine(i);
     const baseline = y + lh / tb.lineHeight - (lh * tb._fontSizeFraction) / tb.lineHeight;
     y += lh;
-    const textLine = line.replace(/\s+$/, '');
+    const textLine = line.replace(INVISIBLE, '').replace(/\s+$/, '');
     if (!textLine) return;
     const lineW = font.widthOfTextAtSize(textLine, o.fontSize);
     const offset = o.align === 'center' ? (tb.width - lineW) / 2 : o.align === 'right' ? tb.width - lineW : 0;

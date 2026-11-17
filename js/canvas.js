@@ -6,6 +6,7 @@ import { cssFamily } from './fonts.js';
 import { NO_CROP, uncropped } from './pageSize.js';
 import { paintEffect } from './blur.js';
 
+export const TEXT_PLACEHOLDER = '텍스트를 입력하세요';
 const round = v => Math.round(v * 100) / 100;
 const norm = a => round(((a % 360) + 360) % 360) % 360;
 
@@ -61,11 +62,146 @@ export function initEditor(canvasEl, stage, h) {
     dragIds = null;
   });
   canvas.on('text:editing:exited', () => hooks.onModified?.());
-  const sel = () => { if (!muteSelection) hooks.onSelection?.(getSelectedIds()); };
+  // 처음 넣은 안내 문구 상태에서 입력을 시작하면 문구 전체를 골라 둔다 (바로 덮어 쓰도록, 특히 휴대폰)
+  canvas.on('text:editing:entered', ({ target }) => {
+    requestAnimationFrame(() => {
+      if (target?.isEditing && target.text === TEXT_PLACEHOLDER) {
+        target.selectAll();
+        canvas.requestRenderAll();
+      }
+    });
+  });
+  const sel = () => {
+    // 비율 유지 요소는 Shift를 누르고 모서리를 끌어도 비율이 깨지지 않게 한다 (Fabric 기본: Shift = 자유 비율)
+    canvas.uniScaleKey = canvas.getActiveObject()?.data?.keepRatio ? 'noUniScaleToggle' : 'shiftKey';
+    if (!muteSelection) hooks.onSelection?.(getSelectedIds());
+  };
   canvas.on('selection:created', sel);
   canvas.on('selection:updated', sel);
   canvas.on('selection:cleared', sel);
-  new ResizeObserver(() => { if (autoFit) fitToStage(); }).observe(stage);
+  // 글자 입력 중(휴대폰 키보드가 올라와 화면이 줄어든 경우 등)에는 배율을 다시 맞추지 않는다
+  new ResizeObserver(() => { if (autoFit && !isEditingText()) fitToStage(); }).observe(stage);
+  stage.addEventListener('scroll', () => canvas.calcOffset(), { passive: true });
+  guardTextInput();
+  if (TOUCH) {
+    canvas.selection = false; // 손가락으로 빈 곳을 끌면 범위 선택 대신 화면을 움직인다 (bindTouch)
+    bindTouch(stage);
+  }
+}
+
+export const TOUCH = matchMedia('(pointer: coarse)').matches;
+
+/**
+ * 터치 화면: 두 손가락으로 확대·축소·이동, 페이지의 빈 곳을 한 손가락으로 끌면 화면 이동, 빈 곳을 톡 치면 선택 해제.
+ * Fabric보다 먼저(캡처 단계) 받아서, 처리한 터치는 Fabric에 넘기지 않는다.
+ */
+function bindTouch(stage) {
+  let g = null;
+  const point = t => ({ x: t.clientX, y: t.clientY });
+  const mid = ts => ({ x: (ts[0].clientX + ts[1].clientX) / 2, y: (ts[0].clientY + ts[1].clientY) / 2 });
+  const dist = ts => Math.hypot(ts[0].clientX - ts[1].clientX, ts[0].clientY - ts[1].clientY) || 1;
+  const pageAt = p => {
+    const r = canvas.upperCanvasEl.getBoundingClientRect();
+    return { x: (p.x - r.left) / zoom, y: (p.y - r.top) / zoom };
+  };
+  // 페이지 위의 한 점(pp)이 화면의 p 위치에 오도록 스크롤
+  const keepUnder = (pp, p) => {
+    const r = canvas.upperCanvasEl.getBoundingClientRect();
+    stage.scrollLeft += r.left + pp.x * zoom - p.x;
+    stage.scrollTop += r.top + pp.y * zoom - p.y;
+  };
+  const block = e => {
+    e.stopPropagation();
+    if (e.cancelable) e.preventDefault();
+  };
+  const opts = { capture: true, passive: false };
+
+  stage.addEventListener('touchstart', e => {
+    if (!canvas || crop || !currentPage()) return;
+    if (e.touches.length >= 2) {
+      block(e);
+      g = { kind: 'pinch', d: dist(e.touches), z: zoom, anchor: pageAt(mid(e.touches)) };
+      return;
+    }
+    if (g) return block(e);
+    if (draw || e.target !== canvas.upperCanvasEl) return;
+    // 페이지 전체를 덮는 원본 배경은 손가락에 쉽게 끌려가므로, 먼저 톡 쳐서 선택한 뒤에만 옮길 수 있게 한다
+    const target = canvas.findTarget(e);
+    const background = target && target.data?.id === currentPage().baseId && canvas.getActiveObject() !== target;
+    if (!target || background) {
+      block(e);
+      g = { kind: 'pan', last: point(e.touches[0]), moved: 0, tapSelect: background ? target : null };
+    }
+  }, opts);
+
+  let frame = 0;
+  stage.addEventListener('touchmove', e => {
+    if (!g) return;
+    block(e);
+    if (g.kind === 'pinch' && e.touches.length >= 2) {
+      const scale = dist(e.touches) / g.d;
+      const m = mid(e.touches);
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        setZoom(g ? g.z * scale : zoom, { render: false }); // 손가락을 떼면 선명하게 다시 그린다
+        if (g) keepUnder(g.anchor, m);
+      });
+    } else if (g.kind === 'pan' && e.touches.length === 1) {
+      const p = point(e.touches[0]);
+      stage.scrollLeft -= p.x - g.last.x;
+      stage.scrollTop -= p.y - g.last.y;
+      g.moved += Math.abs(p.x - g.last.x) + Math.abs(p.y - g.last.y);
+      g.last = p;
+    }
+  }, opts);
+
+  const end = e => {
+    if (!g) return;
+    if (e.touches.length > 0) return block(e); // 아직 손가락이 남아 있으면 계속 이 동작
+    const done = g;
+    g = null;
+    if (done.kind === 'pinch') {
+      // 마지막 손가락은 Fabric에도 넘겨 끌기 상태를 정리하게 한다
+      requestAnimationFrame(() => setZoom(zoom));
+      return;
+    }
+    block(e);
+    if (done.moved < 8) {
+      // 톡 치기: 빈 곳이면 선택 해제, 원본 배경이면 선택
+      exitEditing();
+      if (done.tapSelect) {
+        canvas.setActiveObject(done.tapSelect);
+        canvas.requestRenderAll();
+      } else {
+        clearSelection();
+      }
+    }
+  };
+  stage.addEventListener('touchend', end, opts);
+  stage.addEventListener('touchcancel', end, opts);
+}
+
+/**
+ * 텍스트를 입력할 때 Fabric은 보이지 않는 입력칸(textarea)을 <body> 끝에 붙이고, 글자 위치(페이지 기준 좌표)로 옮긴 뒤 focus한다.
+ * 확대·스크롤 뒤에는 그 좌표가 화면 밖(body 높이 밖)이 되기 쉬운데, 그러면 브라우저가 입력칸을 보이려고
+ * 페이지 전체를 위로 밀어 올려 화면 아래 절반이 흰색으로 비어 보였다.
+ * → 입력칸을 화면에 고정된 크기 0짜리 상자 안에 넣어, 어디에 놓이든 페이지가 밀리지 않게 한다.
+ */
+function guardTextInput() {
+  const box = document.createElement('div');
+  box.className = 'fabric-input-box';
+  box.style.cssText = 'position:fixed;left:0;top:0;width:1px;height:1px;overflow:hidden;opacity:0;';
+  document.body.append(box);
+  fabric.IText.prototype.hiddenTextareaContainer = box;
+  // 혹시 다른 이유로 문서 전체가 밀려도 바로 되돌린다 (이 화면은 원래 스크롤되지 않는다)
+  const unshift = () => {
+    if (window.scrollX || window.scrollY) window.scrollTo(0, 0);
+    for (const el of [document.documentElement, document.body]) {
+      if (el.scrollTop || el.scrollLeft) el.scrollTop = el.scrollLeft = 0;
+    }
+  };
+  window.addEventListener('scroll', unshift);
+  document.addEventListener('focusin', () => requestAnimationFrame(unshift));
 }
 
 export const getCanvas = () => canvas;
@@ -131,6 +267,11 @@ export async function buildFabricObject(o, rasterPerPt = 2) {
     console.error('요소를 그리지 못했습니다', o, e);
   }
   fo ||= new fabric.Rect({ ...common, width: o.w, height: o.h, fill: '#f3f4f6', stroke: '#ef4444', strokeWidth: 1, strokeDashArray: [4, 4] });
+  if ((o.type === 'pdfpage' || o.type === 'image') && o.keepRatio !== false) {
+    // 원본 비율 유지: 변 가운데 손잡이(한쪽만 늘이기)를 숨기고 모서리로만 크기를 바꾼다
+    fo.data.keepRatio = true;
+    fo.setControlsVisibility({ ml: false, mr: false, mt: false, mb: false });
+  }
   applyLock(fo, o.locked);
   return fo;
 }
@@ -310,6 +451,7 @@ export function exitEditing() {
 export function editText(id) {
   const fo = canvas.getObjects().find(f => f.data.id === id);
   if (!fo || fo.type !== 'textbox') return;
+  canvas.calcOffset();
   canvas.setActiveObject(fo);
   fo.enterEditing();
   fo.selectAll();
@@ -523,14 +665,14 @@ export function cancelDraw() {
 
 export const getZoom = () => zoom;
 
-export function setZoom(z, { manual = true } = {}) {
+export function setZoom(z, { manual = true, render = true } = {}) {
   if (manual) autoFit = false;
   zoom = Math.min(5, Math.max(0.1, z));
   const page = currentPage();
   if (page && shownPageId === page.id) {
     applyDimensions(page);
     canvas.requestRenderAll();
-    if (rasterPerPt() > builtScale) renderCurrentPage(); // 확대하면 원본을 더 선명하게 다시 그린다
+    if (render && rasterPerPt() > builtScale) renderCurrentPage(); // 확대하면 원본을 더 선명하게 다시 그린다
   }
   hooks.onZoom?.(zoom);
 }

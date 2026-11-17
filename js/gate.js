@@ -3,7 +3,10 @@
 // - 관리자가 입장 코드를 바꾸면 다음 접속 때 입장 팝업이 다시 뜬다.
 // - PDF·이미지 저장이 끝날 때마다 '누가 언제 저장했는지'만 기록한다. 파일 내용은 보내지 않는다.
 
+// - config.js에 GOOGLE_CLIENT_ID가 있으면 입장 코드 대신 구글 계정 로그인을 쓴다 (account.js)
+
 import { TRACKING_URL } from './config.js';
+import { googleMode, ensureGoogleEntry, trackWithSession } from './account.js';
 
 const KEY = 'pdf-editor.entry'; // { clientId, name, codeVersion }
 
@@ -33,6 +36,7 @@ const newClientId = () => (crypto.randomUUID ? crypto.randomUUID() : `c${Date.no
  */
 export async function ensureEntry() {
   if (!TRACKING_URL) return;
+  if (googleMode()) return ensureGoogleEntry();
   const saved = readEntry();
   let notice = '';
   if (saved?.codeVersion) {
@@ -100,6 +104,7 @@ function showEntryDialog(saved, notice) {
 /** PDF·이미지 저장 완료 기록 (실패해도 작업에는 영향 없음) */
 export function trackExport(type) {
   if (!TRACKING_URL) return;
+  if (googleMode()) return trackWithSession(type);
   const entry = readEntry();
   if (!entry) return;
   callServer({ action: 'track', type, clientId: entry.clientId, name: entry.name, codeVersion: entry.codeVersion }, { keepalive: true }).catch(() => {});

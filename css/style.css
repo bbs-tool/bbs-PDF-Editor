@@ -174,6 +174,9 @@ code { background: #f1f3f6; padding: 1px 5px; border-radius: 4px; font-size: 12p
 .page-range { display: flex; flex-direction: column; gap: 6px; }
 .entry-dialog::backdrop { background: rgba(15,23,42,.72); }
 .entry-dialog button[type=submit] { padding: 9px 12px; }
+/* 구글 로그인 버튼 자리 (버튼은 구글이 그려 넣는다) */
+.google-button { display: flex; justify-content: center; min-height: 44px; margin: 6px 0; }
+.account-btn { max-width: 160px; overflow: hidden; text-overflow: ellipsis; }
 .entry-error { color: var(--danger); font-size: 13px; }
 .dialog-body a { color: var(--accent); margin-left: 4px; }
 .auth-greet { font-size: 15px; font-weight: 600; line-height: 1.7; }
@@ -264,6 +267,18 @@ code { background: #f1f3f6; padding: 1px 5px; border-radius: 4px; font-size: 12p
 .em-red { color: var(--danger); font-style: normal; font-weight: 700; }
 .tour-actions { display: flex; gap: 6px; align-items: center; margin-top: 6px; }
 
+/* ── 휴대폰·터치 대응 ─────────────────────────────────── */
+/* PC에서는 휴대폰용 묶음(dock·더보기 메뉴)이 없는 것처럼 원래 자리에 펼쳐 보인다 */
+.dock, .more-menu { display: contents; }
+.phone-only, .phone-label, .ico:not(.keep), .sel-bar, .mobile-backdrop { display: none; }
+/* 화면 전체 확대(브라우저 핀치)는 막고, 편집 화면 확대는 두 손가락으로 따로 처리한다 (canvas.js) */
+body { touch-action: pan-x pan-y; }
+@supports (height: 100dvh) { html, body { height: 100dvh; } }
+/* 마우스가 없는 기기: 마우스를 올려야 보이던 버튼을 항상 보인다 */
+@media (hover: none) {
+  .acts, .page-check { opacity: 1; }
+}
+
 @media (max-width: 900px) {
   .layout { grid-template-columns: 140px 1fr; }
   .panel { position: fixed; right: 0; top: auto; bottom: 0; width: 100%; max-height: 45vh; border-top: 1px solid var(--border); }
@@ -271,4 +286,108 @@ code { background: #f1f3f6; padding: 1px 5px; border-radius: 4px; font-size: 12p
   /* 오른쪽 패널이 아래로 내려오므로 공지 버튼은 그 위에 */
   body:not(.admin) .notice-fab { bottom: calc(45vh + 12px); }
   body:not(.admin) .notice-panel { bottom: calc(45vh + 68px); max-height: calc(55vh - 90px); }
+}
+
+/* 휴대폰 (폭 760px 이하): 위쪽은 파일 열기·확대·저장·⋯, 편집 도구는 아래 막대, 페이지 목록·설정은 서랍 */
+@media (max-width: 760px) {
+  :root { --dock-h: 58px; }
+  .toolbar { flex-wrap: nowrap; gap: 6px; padding: 6px 8px; position: relative; padding-top: max(6px, env(safe-area-inset-top)); }
+  .toolbar .group { border-left: 0; padding-left: 0; }
+  .brand { margin-right: 0; }
+  .brand-name { display: none; }
+  .brand-bb { font-size: 22px; }
+  #btnZoomIn, #btnZoomOut { display: none; }
+  .zoom { gap: 4px; }
+  .zoom span { min-width: 38px; font-size: 12px; }
+  #btnZoomFit { padding: 6px 8px; }
+  #btnOpen, #btnExport { padding: 7px 10px; }
+  .phone-only { display: revert; }
+  .desktop-only { display: none; }
+  #btnMore { display: inline-block; width: 36px; font-size: 18px; }
+
+  /* ⋯ 더보기 메뉴 */
+  .more-menu {
+    display: none; position: absolute; top: calc(100% + 4px); right: 8px; z-index: 49; min-width: 190px;
+    flex-direction: column; gap: 2px; padding: 6px; background: var(--surface);
+    border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.18);
+  }
+  .more-menu.open { display: flex; }
+  .more-menu button { width: 100%; text-align: left; border: 0; padding: 11px 12px; font-size: 15px; }
+  .more-menu .account-btn { max-width: none; color: var(--muted); }
+
+  /* 아래 도구 막대 */
+  .dock {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 44; display: flex; gap: 2px;
+    height: calc(var(--dock-h) + env(safe-area-inset-bottom)); padding: 4px 4px env(safe-area-inset-bottom);
+    background: var(--surface); border-top: 1px solid var(--border); overflow-x: auto; scrollbar-width: none;
+  }
+  .dock::-webkit-scrollbar { display: none; }
+  .dock .group { display: contents; }
+  .dock button {
+    flex: 1 1 0; min-width: 40px; width: auto; height: calc(var(--dock-h) - 8px); padding: 2px; border: 0; border-radius: 8px; background: transparent;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; font-size: 11px; line-height: 1.1;
+  }
+  .dock button:hover:not(:disabled) { background: transparent; } /* 터치 후 남는 회색 표시 없애기 */
+  .dock button.active { background: var(--accent-soft); color: var(--accent); }
+  .dock .ico, .dock .ico.keep { display: block; font-size: 19px; line-height: 1; }
+  .dock .long, #btnInsertImage { display: none; }
+  .dock .phone-label { display: inline; }
+  body.has-selection #btnPanelSheet { color: var(--accent); font-weight: 700; }
+
+  /* 편집 화면이 화면 전체를 쓴다 */
+  .layout { grid-template-columns: 1fr; padding-bottom: calc(var(--dock-h) + env(safe-area-inset-bottom)); }
+  .canvas-wrap { padding: 14px; }
+  .empty { margin: auto 16px; padding: 28px 20px; }
+
+  /* 페이지 목록: 왼쪽 서랍 */
+  .pages {
+    position: fixed; top: 0; bottom: 0; left: 0; z-index: 47; width: min(78vw, 270px);
+    transform: translateX(-105%); transition: transform .2s ease; box-shadow: 4px 0 20px rgba(0,0,0,.18);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  body.show-pages .pages { transform: none; }
+  .pane-head { gap: 8px; }
+  .pane-head > span { flex: 1; }
+  .thumb img { width: 150px; }
+  .acts button { padding: 5px 8px; font-size: 12px; }
+  .page-check { width: 22px; height: 22px; }
+
+  /* 설정: 아래에서 올라오는 시트 */
+  .panel {
+    position: fixed; left: 0; right: 0; bottom: 0; top: auto; z-index: 47; width: 100%; max-height: 75dvh;
+    border-left: 0; border-radius: 14px 14px 0 0; box-shadow: 0 -6px 24px rgba(0,0,0,.2);
+    transform: translateY(105%); transition: transform .2s ease; padding: 0 12px calc(24px + env(safe-area-inset-bottom));
+  }
+  body.show-panel .panel { transform: none; }
+  .sheet-head { display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 1; margin: 0 -12px; padding: 10px 12px; background: var(--surface); border-bottom: 1px solid var(--border); }
+  .sheet-head b { font-size: 15px; }
+  .mobile-backdrop { position: fixed; inset: 0; z-index: 46; background: rgba(15,23,42,.35); }
+  body.show-pages .mobile-backdrop, body.show-panel .mobile-backdrop { display: block; }
+
+  /* 손가락으로 누르기 쉽게 */
+  .panel button, .dialog-body button { min-height: 36px; }
+  .btn-row button { padding: 8px 8px; font-size: 13px; }
+  .seg button { padding: 8px 12px; font-size: 13px; }
+  /* 16px보다 작은 입력칸을 누르면 아이폰이 화면을 확대해 버린다 */
+  input[type="number"], input[type="text"], input[type="password"], input[type="email"], select, textarea { font-size: 16px; }
+  .context-menu { min-width: 190px; }
+  .context-menu button { padding: 11px 12px; font-size: 15px; }
+  dialog { max-height: calc(100dvh - 24px); overflow: auto; }
+
+  /* 요소를 선택하면 나타나는 빠른 동작 막대 */
+  .sel-bar {
+    position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(var(--dock-h) + env(safe-area-inset-bottom) + 10px); z-index: 45;
+    gap: 2px; padding: 4px; background: #1f2430; border-radius: 12px; box-shadow: 0 6px 20px rgba(0,0,0,.28);
+  }
+  body.has-selection:not(.show-panel):not(.show-pages) .sel-bar { display: flex; }
+  .sel-bar button { background: transparent; border: 0; color: #fff; padding: 9px 14px; font-size: 14px; }
+  .sel-bar button:hover:not(:disabled) { background: rgba(255,255,255,.12); }
+  .sel-bar button.danger { color: #fca5a5; }
+
+  .toast { bottom: calc(var(--dock-h) + env(safe-area-inset-bottom) + 66px); max-width: calc(100vw - 32px); }
+  body:not(.admin) .notice-fab { right: 12px; bottom: calc(var(--dock-h) + env(safe-area-inset-bottom) + 12px); width: 42px; height: 42px; }
+  body.has-selection .notice-fab { display: none; }
+  body:not(.admin) .notice-panel { right: 12px; bottom: calc(var(--dock-h) + env(safe-area-inset-bottom) + 64px); max-height: calc(100dvh - 190px); }
+  .crop-bar { top: auto; bottom: calc(var(--dock-h) + env(safe-area-inset-bottom) + 8px); width: calc(100vw - 16px); flex-wrap: wrap; justify-content: center; z-index: 48; }
+  .crop-bar span { width: 100%; text-align: center; }
 }

@@ -21,7 +21,7 @@ const STEPS = [
   {
     target: ['#btnText', '#btnRect', '#btnEllipse', '#btnBlur', '#btnUndo', '#btnRedo', '.toolbar .zoom'], title: '편집 도구',
     text: `<ul>
-      <li><b>텍스트</b> — 상자를 더블클릭해 글자를 고치고, 폰트·크기·색은 오른쪽 패널에서 바꿉니다.</li>
+      <li><b>텍스트</b> — 버튼을 누른 뒤 페이지 위를 끌어 상자 영역을 정합니다. 상자를 더블클릭해 글자를 고치고, 폰트·크기·색은 오른쪽 패널에서 바꿉니다.</li>
       <li><b>네모·동그라미</b> — 버튼을 누른 뒤 페이지 위를 <em class="em-red">끌어서</em> 원하는 위치·크기로 그립니다 (Shift: 정사각형·정원, Esc: 취소). 흰 네모로 원본 글자를 가릴 때도 씁니다.</li>
       <li><b>모자이크·블러</b> — 가릴 영역을 끌어서 정하면 그 부분을 모자이크·블러로 가립니다. 효과·모양(네모·동그라미)·강도는 오른쪽 패널에서 고릅니다.</li>
       <li><b>↶ ↷</b> — 실행 취소·다시 실행 (Ctrl+Z / Ctrl+Y)</li>
@@ -62,6 +62,42 @@ const STEPS = [
   },
 ];
 
+// 휴대폰 화면(폭 760px 이하)용 짧은 안내
+const PHONE_STEPS = [
+  {
+    title: "BB's PDF Editor에 오신 것을 환영합니다",
+    text: '휴대폰에서도 PDF·이미지를 열어 글자·도형을 넣고 저장할 수 있습니다. 파일은 서버로 보내지 않고 이 브라우저 안에서만 처리합니다.',
+  },
+  {
+    target: ['#btnOpen'], title: '파일 열기',
+    text: 'PDF나 사진을 새 페이지로 불러옵니다. 여러 파일을 한 번에 고를 수 있습니다.',
+  },
+  {
+    target: '#dock', title: '아래쪽 도구',
+    text: `<ul>
+      <li><b>페이지</b> — 페이지 목록을 열어 이동·순서 변경·복제·삭제</li>
+      <li><b>텍스트·네모·동그라미·모자이크</b> — 버튼을 누른 뒤 페이지 위를 손가락으로 끌어 영역을 정합니다</li>
+      <li><b>설정</b> — 선택한 요소의 글꼴·색·크기, 페이지 규격 등</li>
+    </ul>`,
+  },
+  {
+    target: '#stage', title: '손가락으로 다루기',
+    text: `<ul>
+      <li><b>두 손가락</b>으로 벌리고 오므려 확대·축소, 그대로 움직여 화면 이동</li>
+      <li>요소를 톡 치면 선택되고, 끌어서 옮기고 모서리로 크기를 바꿉니다. 선택한 글자를 <b>한 번 더</b> 치면 입력할 수 있습니다</li>
+      <li>불러온 PDF·사진 배경은 실수로 밀리지 않도록 <b>먼저 톡 쳐서 선택한 뒤</b> 끌어야 움직입니다</li>
+      <li>선택하면 아래에 [속성·복제·삭제·⋯] 막대가 나타납니다. ⋯에는 자르기·잠금 등이 있습니다</li>
+    </ul>`,
+  },
+  {
+    target: ['#btnExport', '#btnMore'], title: '저장',
+    text: '<b>PDF 저장</b>으로 저장합니다(용량 줄이기 선택 가능). 이미지 저장·튜토리얼은 <b>⋯</b> 메뉴에 있습니다.',
+  },
+];
+
+const phone = () => matchMedia('(max-width: 760px)').matches;
+const steps = () => (phone() ? PHONE_STEPS : STEPS);
+
 let root = null;
 let index = 0;
 
@@ -92,7 +128,7 @@ export function startTour() {
   document.body.append(root);
   root.querySelector('.tour-skip').onclick = close;
   root.querySelector('.tour-prev').onclick = () => go(index - 1);
-  root.querySelector('.tour-next').onclick = () => (index === STEPS.length - 1 ? close() : go(index + 1));
+  root.querySelector('.tour-next').onclick = () => (index === steps().length - 1 ? close() : go(index + 1));
   window.addEventListener('keydown', onKey, true);
   window.addEventListener('resize', place);
   go(0);
@@ -123,15 +159,15 @@ function targets(target) {
 }
 
 function go(i) {
-  index = Math.max(0, Math.min(i, STEPS.length - 1));
-  const step = STEPS[index];
+  index = Math.max(0, Math.min(i, steps().length - 1));
+  const step = steps()[index];
   targets(step.extra?.target || step.target)[0]?.scrollIntoView({ block: 'nearest' });
   const main = root.querySelector('.tour-main');
-  main.querySelector('.tour-step').textContent = `${index + 1} / ${STEPS.length}`;
+  main.querySelector('.tour-step').textContent = `${index + 1} / ${steps().length}`;
   main.querySelector('.tour-title').textContent = step.title;
   main.querySelector('.tour-text').innerHTML = step.text;
   main.querySelector('.tour-prev').disabled = index === 0;
-  main.querySelector('.tour-next').textContent = index === STEPS.length - 1 ? '시작하기' : '다음';
+  main.querySelector('.tour-next').textContent = index === steps().length - 1 ? '시작하기' : '다음';
   const extra = root.querySelector('.tour-extra');
   extra.hidden = !step.extra;
   if (step.extra) {
@@ -184,7 +220,7 @@ function placeBubble(bubble, r, end = false, leftFirst = false) {
 
 function place() {
   if (!root) return;
-  const step = STEPS[index];
+  const step = steps()[index];
   const hole = root.querySelector('.tour-hole');
   const ring = root.querySelector('.tour-ring');
   const main = root.querySelector('.tour-main');

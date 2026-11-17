@@ -9,14 +9,16 @@ import { ACCEPT_FILES, ACCEPT_IMAGES, isPdf, isImage } from './importer.js';
 import { createApi } from './api.js';
 import { listTemplates, deleteTemplate } from './templates.js';
 import { startTour, shouldAutoStart } from './tour.js';
-import { DEFAULT_ALIGN } from './pageSize.js';
+import { DEFAULT_ALIGN, baseOf, visibleNat } from './pageSize.js';
 import { makeZip } from './zip.js';
 import { ensureEntry, trackExport } from './gate.js';
 import { bindAdminAuth, getAdminToken } from './adminAuth.js';
 import { TRACKING_URL } from './config.js';
+import { googleMode, getSession, clearSession } from './account.js';
 import { extensions } from './extensions/index.js';
 import { initNotices } from './notice.js';
 import { BLUR_DEFAULTS, hasBlur } from './blur.js';
+import { compressPdf } from './compress.js';
 
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
@@ -24,7 +26,7 @@ const toMm = pt => Math.round((pt / PT_PER_MM) * 10) / 10;
 const toPt = mm => mm * PT_PER_MM;
 
 const TYPE_LABEL = { pdfpage: 'PDF 원본 페이지', image: '이미지', text: '텍스트', rect: '네모', ellipse: '동그라미', blur: '모자이크·블러' };
-const DRAW_BUTTON = { rect: '#btnRect', ellipse: '#btnEllipse', blur: '#btnBlur' };
+const DRAW_BUTTON = { text: '#btnText', rect: '#btnRect', ellipse: '#btnEllipse', blur: '#btnBlur' };
 
 // 모자이크·블러: 마지막으로 고른 효과·모양·강도를 다음에 그릴 때도 쓴다 (이 브라우저에 기억)
 const BLUR_KEY = 'pdf-editor.blurDefaults';
@@ -84,7 +86,11 @@ async function boot() {
 
   editor.initEditor($('#editorCanvas'), $('#stage'), {
     onModified: () => cmd.canvasModified(),
-    onSelection: ids => { selection = ids; renderObjectPanel(); },
+    onSelection: ids => {
+      selection = ids;
+      document.body.classList.toggle('has-selection', ids.length > 0); // 휴대폰 빠른 동작 막대
+      renderObjectPanel();
+    },
     onZoom: z => { $('#zoomLabel').textContent = `${Math.round(z * 100)}%`; },
     onCrop: active => { $('#cropBar').hidden = !active; },
     onDraw: type => {
@@ -117,8 +123,11 @@ async function boot() {
   bindPageTools();
   bindKeyboard();
   bindDragDrop();
+  bindMobile();
   Sortable.create($('#pageList'), {
     animation: 150,
+    delay: 250, // 터치: 길게 눌러야 끌기 시작 (그냥 쓸어 넘기면 목록 스크롤)
+    delayOnTouchOnly: true,
     filter: '.page-check', // 체크 상자를 누를 때는 끌기를 시작하지 않는다
     preventOnFilter: false,
     onEnd: e => cmd.movePage(e.oldIndex, e.newIndex),
@@ -196,6 +205,22 @@ function drawShapeUi(type) {
     if (same) return;
   }
   editor.exitEditing();
+  closeSheets();
+  if (type === 'text') {
+    // 끈 영역의 너비가 텍스트 상자 너비가 되고, 상자 위쪽에서 글자가 시작한다. 클릭만 하면 그 자리에서 기본 너비로.
+    const started = editor.startDraw('text', async box => {
+      try {
+        const id = await cmd.addTextInBox(box);
+        // 휴대폰은 화면을 직접 누를 때만 키보드가 올라오므로, 선택만 해 두고 한 번 더 누르게 안내한다
+        if (editor.TOUCH) toast('글자 상자를 한 번 더 톡 치면 입력할 수 있습니다', 3500);
+        else editor.editText(id);
+      } catch (e) {
+        toast(e.message, 4000);
+      }
+    }, { shape: 'rect' });
+    if (started) toast(editor.TOUCH ? '글자를 넣을 영역을 손가락으로 끌어서 지정하세요\n톡 치기만 하면 그 자리에 기본 크기로 · 버튼을 다시 누르면 취소' : '글자를 넣을 영역을 끌어서 지정하세요\n클릭만 하면 그 자리에 기본 크기로 · Esc: 취소', 4000);
+    return;
+  }
   const blur = type === 'blur';
   const shape = blur ? blurDefaults.shape : type;
   const started = editor.startDraw(type, async box => {
@@ -208,11 +233,12 @@ function drawShapeUi(type) {
   }, { shape });
   if (!started) return;
   const square = shape === 'rect' ? '정사각형' : '정원';
+  const keys = editor.TOUCH ? '버튼을 다시 누르면 취소' : `Shift: ${square} · Esc: 취소`;
   if (blur) {
     const what = `${blurDefaults.mode === 'blur' ? '블러' : '모자이크'} ${blurDefaults.strength}% · ${shape === 'rect' ? '네모' : '동그라미'}`;
-    toast(`가릴 영역을 끌어서 지정하세요 (${what})\n효과·모양·강도는 그린 뒤 오른쪽 패널에서 바꿉니다 · Shift: ${square} · Esc: 취소`, 5000);
+    toast(`가릴 영역을 끌어서 지정하세요 (${what})\n효과·모양·강도는 그린 뒤 ${editor.TOUCH ? '[속성]' : '오른쪽 패널'}에서 바꿉니다 · ${keys}`, 5000);
   } else {
-    toast(`페이지 위를 끌어서 ${TYPE_LABEL[type]}를 그리세요\n클릭만 하면 기본 크기 · Shift: ${square} · Esc: 취소`, 4000);
+    toast(`페이지 위를 끌어서 ${TYPE_LABEL[type]}를 그리세요\n${editor.TOUCH ? '톡 치기만' : '클릭만'} 하면 기본 크기 · ${keys}`, 4000);
   }
 }
 
@@ -222,16 +248,12 @@ function bindToolbar() {
     await openFilesUi([...e.target.files]);
     e.target.value = '';
   };
-  $('#btnInsertImage').onclick = () => $('#fileImage').click();
+  $('#btnInsertImage').onclick = $('#btnInsertImageMore').onclick = () => $('#fileImage').click();
   $('#fileImage').onchange = async e => {
     await insertImagesUi([...e.target.files]);
     e.target.value = '';
   };
-  $('#btnText').onclick = async () => {
-    if (!needPage()) return;
-    const id = await cmd.addText();
-    editor.editText(id);
-  };
+  $('#btnText').onclick = () => drawShapeUi('text');
   $('#btnRect').onclick = () => drawShapeUi('rect');
   $('#btnEllipse').onclick = () => drawShapeUi('ellipse');
   $('#btnBlur').onclick = () => drawShapeUi('blur');
@@ -362,7 +384,10 @@ function renderPageList() {
       if (act === 'dup') cmd.duplicatePage(i);
       else if (act === 'rot') cmd.rotatePage(i);
       else if (act === 'del') cmd.deletePage(i).then(() => toast('페이지를 삭제했습니다 (Ctrl+Z로 되돌리기)'));
-      else cmd.goToPage(i);
+      else {
+        cmd.goToPage(i);
+        if (PHONE.matches) closeSheets(); // 휴대폰: 페이지를 고르면 서랍을 닫고 그 페이지를 보여 준다
+      }
     });
     return li;
   }));
@@ -409,6 +434,23 @@ const PAGE_HINTS = {
 };
 
 const marginOf = page => ({ top: 0, right: 0, bottom: 0, left: 0, ...page.margin });
+
+/** 페이지 '원본 비율' (가로÷세로): 원본 배경이 보이는 모양(자르기·90° 회전 반영), 배경이 없으면 지금 영역 비율 */
+function pageRatio(page) {
+  const base = baseOf(page);
+  if (!base) return page.customW / page.customH;
+  const v = visibleNat(base);
+  const swap = Math.round((((base.angle % 360) + 360) % 360) / 90) % 2 === 1;
+  return swap ? v.h / v.w : v.w / v.h;
+}
+
+/** 이미지·PDF 요소의 원본 비율 (가로÷세로, 자르기 반영) */
+const objectRatio = o => {
+  const v = visibleNat(o);
+  return v.w / v.h;
+};
+const hasRatio = o => o.type === 'image' || o.type === 'pdfpage';
+const keepsRatio = o => hasRatio(o) && o.keepRatio !== false; // 기본은 켜짐
 let lastMarginSide = 'top'; // '모든 영역 동일 여백'을 켤 때 기준이 되는 마지막 수정 칸
 
 /**
@@ -449,7 +491,8 @@ function renderPagePanel() {
   for (const opt of $('#pageSizeMode').options) {
     if (opt.value === 'original' || opt.value === 'fit') opt.disabled = !hasBase;
   }
-  $('#customFields').hidden = page.sizeMode !== 'custom';
+  $('#customFields').hidden = $('#pageKeepRatioRow').hidden = page.sizeMode !== 'custom';
+  $('#pageKeepRatio').checked = !!page.keepRatio;
   setVal('#pageCustomW', Math.round(page.customW * 10) / 10);
   setVal('#pageCustomH', Math.round(page.customH * 10) / 10);
   $('#marginFields').hidden = page.sizeMode !== 'fit' && page.sizeMode !== 'custom';
@@ -479,14 +522,37 @@ function bindPagePanel() {
   const onAlign = () => cmd.setPageSettings({ align: { h: $('#pageAlignH').value, v: $('#pageAlignV').value } });
   $('#pageAlignH').onchange = onAlign;
   $('#pageAlignV').onchange = onAlign;
-  const onCustom = () => {
-    const w = parseFloat($('#pageCustomW').value);
-    const h = parseFloat($('#pageCustomH').value);
-    if (!(w >= 10 && h >= 10)) return renderPagePanel();
-    if (withinLimit(currentPage(), { customW: w, customH: h })) cmd.setPageSettings({ customW: w, customH: h });
+  const round1 = v => Math.round(v * 10) / 10;
+  // changed: 'w' | 'h' — 비율 유지가 켜져 있으면 다른 쪽을 원본 비율대로 맞춘다
+  const onCustom = changed => {
+    const page = currentPage();
+    let w = parseFloat($('#pageCustomW').value);
+    let h = parseFloat($('#pageCustomH').value);
+    if (page.keepRatio) {
+      const r = pageRatio(page);
+      if (changed === 'w') h = round1(w / r);
+      else w = round1(h * r);
+    }
+    if (!(w >= 10 && h >= 10)) {
+      if (page.keepRatio) toast('비율을 유지하면 한 변이 10mm보다 작아집니다', 4000);
+      return renderPagePanel();
+    }
+    if (withinLimit(page, { customW: w, customH: h })) cmd.setPageSettings({ customW: w, customH: h });
   };
-  $('#pageCustomW').onchange = onCustom;
-  $('#pageCustomH').onchange = onCustom;
+  $('#pageCustomW').onchange = () => onCustom('w');
+  $('#pageCustomH').onchange = () => onCustom('h');
+  $('#pageKeepRatio').onchange = e => {
+    const page = currentPage();
+    if (!page) return;
+    if (!e.target.checked) return cmd.setPageSettings({ keepRatio: false });
+    // 켜는 순간 너비는 두고 높이를 원본 비율대로 맞춘다
+    const customH = round1(page.customW / pageRatio(page));
+    if (customH < 10 || !withinLimit(page, { customH })) {
+      e.target.checked = false;
+      return customH < 10 ? toast('비율을 맞추면 높이가 10mm보다 작아집니다', 4000) : undefined;
+    }
+    cmd.setPageSettings({ keepRatio: true, customH });
+  };
   const setMargin = (side, v) => {
     const page = currentPage();
     if (!page) return;
@@ -555,6 +621,8 @@ function renderObjectPanel() {
     input.disabled = !single || (key === 'h' && o.type === 'text');
     setVal(input, single ? geom[key] : '');
   }
+  $('#keepRatioRow').hidden = !(single && hasRatio(o));
+  $('#propKeepRatio').checked = single && keepsRatio(o);
   setVal('#propOpacity', Math.round((o.opacity ?? 1) * 100));
   $('#propOpacityVal').textContent = `${Math.round((o.opacity ?? 1) * 100)}%`;
 
@@ -598,13 +666,23 @@ function bindObjectPanel() {
       const [o] = selectedObjects();
       if (!o || Number.isNaN(v)) return;
       const key = input.dataset.geom;
+      // 너비·높이는 왼쪽 위를 고정한 채 바꾼다. 비율 유지가 켜져 있으면 다른 쪽도 원본 비율대로.
+      const resize = (w, h) => update({ w, h, cx: o.cx - o.w / 2 + w / 2, cy: o.cy - o.h / 2 + h / 2 });
       if (key === 'x') update({ cx: toPt(v) + o.w / 2 });
       else if (key === 'y') update({ cy: toPt(v) + o.h / 2 });
-      else if (key === 'w' && v > 0) update({ w: toPt(v), cx: o.cx - o.w / 2 + toPt(v) / 2 }); // 왼쪽 위 고정
-      else if (key === 'h' && v > 0) update({ h: toPt(v), cy: o.cy - o.h / 2 + toPt(v) / 2 });
+      else if (key === 'w' && v > 0) resize(toPt(v), keepsRatio(o) ? toPt(v) / objectRatio(o) : o.h);
+      else if (key === 'h' && v > 0) resize(keepsRatio(o) ? toPt(v) * objectRatio(o) : o.w, toPt(v));
       else if (key === 'angle') update({ angle: ((v % 360) + 360) % 360 });
     };
   }
+  $('#propKeepRatio').onchange = e => {
+    const [o] = selectedObjects();
+    if (!o || !hasRatio(o)) return;
+    if (!e.target.checked) return update({ keepRatio: false });
+    // 켜는 순간 너비는 두고 높이를 원본 비율대로 되돌린다 (늘어나 있던 것을 바로잡기)
+    const h = o.w / objectRatio(o);
+    update({ keepRatio: true, h, cy: o.cy - o.h / 2 + h / 2 });
+  };
 
   const opacity = $('#propOpacity');
   opacity.oninput = () => {
@@ -703,8 +781,8 @@ function markSystemClipboard(n) {
   if (!done) navigator.clipboard?.writeText(clipMark).then(() => { clipMarkFailed = false; }, () => {});
 }
 
-function copyElements(ids) {
-  const n = cmd.copyObjects(ids);
+function copyElements(ids, opts) {
+  const n = cmd.copyObjects(ids, opts);
   if (n) {
     markSystemClipboard(n);
     $('#btnPaste').disabled = false;
@@ -718,7 +796,7 @@ function copySelection() {
 }
 
 async function cutSelection(ids = selection) {
-  const n = copyElements(ids);
+  const n = copyElements(ids, { cut: true });
   if (!n) return;
   await cmd.deleteObjects(ids);
   toast(`${n}개 요소를 잘라냈습니다. Ctrl+V로 붙여 넣으세요`);
@@ -885,6 +963,24 @@ function bindTemplatePanel() {
 
 function bindAdminButton() {
   if (!TRACKING_URL) return; // 기록 서버를 설정해야 관리자 화면이 의미가 있다
+  if (googleMode()) {
+    // 구글 로그인: 관리자 계정으로 로그인했으면 [관리자 모드]로 관리자 화면을 바로 연다 (메일 인증 없음)
+    const s = getSession();
+    if (!s) return;
+    $('#btnAdmin').hidden = !s.admin;
+    $('#btnAdmin').title = '관리자 화면 열기 (새 탭)';
+    $('#btnAdmin').onclick = () => window.open('admin.html', '_blank', 'noopener');
+    const acct = $('#btnAccount');
+    acct.hidden = false;
+    acct.textContent = s.name || s.email;
+    acct.title = `${s.email} (누르면 로그아웃)`;
+    acct.onclick = () => {
+      if (!confirm(`${s.email} 계정에서 로그아웃할까요?\n저장하지 않은 작업은 사라집니다.`)) return;
+      clearSession();
+      location.reload();
+    };
+    return;
+  }
   const dialog = $('#adminDialog');
   const done = on => {
     for (const el of dialog.querySelectorAll('.auth-request, .auth-greet')) el.hidden = on;
@@ -963,18 +1059,39 @@ function bindPdfExport() {
       return toast(err.message, 5000);
     }
     $('#pdfExportDialog').close();
-    runPdfExport({ indexes, merge: !$('#pdfMergeRow').hidden && $('#pdfMerge').checked });
+    const compress = $('#pdfCompress').value;
+    try { localStorage.setItem(COMPRESS_KEY, compress); } catch { /* 무시 */ }
+    runPdfExport({ indexes, merge: !$('#pdfMergeRow').hidden && $('#pdfMerge').checked, compress });
   });
+  try {
+    const saved = localStorage.getItem(COMPRESS_KEY);
+    if (saved && $(`#pdfCompress option[value="${saved}"]`)) $('#pdfCompress').value = saved;
+  } catch { /* 기본값 */ }
 }
+
+const COMPRESS_KEY = 'pdf-editor.compress';
+const mb = n => `${(n / 1048576).toFixed(1)}MB`;
 
 async function runPdfExport(opts) {
   const all = opts.indexes.length === state.doc.pages.length;
   const range = all ? '' : `_${opts.indexes.length === 1 ? `${opts.indexes[0] + 1}쪽` : `${opts.indexes.length}쪽`}`;
+  const compress = opts.compress && opts.compress !== 'none' ? opts.compress : null;
   try {
-    const bytes = await withBusy('PDF 만드는 중…', () => cmd.exportDocument(opts));
-    download(bytes, `${docName || 'document'}_편집${range}.pdf`);
+    const { bytes, before } = await withBusy('PDF 만드는 중…', async () => {
+      const made = await cmd.exportDocument(opts);
+      if (!compress) return { bytes: made, before: made.length };
+      $('#busyMsg').textContent = '용량 줄이는 중…';
+      const small = await compressPdf(made, compress, {
+        onProgress: (i, n) => { $('#busyMsg').textContent = `용량 줄이는 중… (${i}/${n})`; },
+      });
+      return { bytes: small, before: made.length };
+    });
+    download(bytes, `${docName || 'document'}_편집${range}${compress ? '_압축' : ''}.pdf`);
     trackExport('pdf');
-    toast(`저장했습니다 (${all ? '전체' : `${opts.indexes.length}쪽`}, ${(bytes.length / 1048576).toFixed(1)}MB)`);
+    const what = all ? '전체' : `${opts.indexes.length}쪽`;
+    if (!compress) toast(`저장했습니다 (${what}, ${mb(bytes.length)})`);
+    else if (bytes.length < before) toast(`저장했습니다 (${what}, ${mb(before)} → ${mb(bytes.length)}, ${Math.round((1 - bytes.length / before) * 100)}% 줄임)`, 5000);
+    else toast(`저장했습니다 (${what}, ${mb(bytes.length)})\n더 줄일 사진이 없어 원래 크기 그대로입니다. 더 줄이려면 '최대'를 고르세요.`, 6000);
   } catch (e) {
     if (e.code === 'NEED_FONT_FILE') askFontFile(e, () => runPdfExport(opts));
     else {
@@ -1054,49 +1171,58 @@ function askFontFile(err, retry = doExport) {
 // ── 우클릭 메뉴·자르기 ────────────────────────────────
 
 function bindContextMenu() {
-  const menu = $('#contextMenu');
   $('#stage').addEventListener('contextmenu', e => {
     e.preventDefault();
     if (editor.isCropping()) return;
     const id = editor.objectIdAt(e);
-    const o = id && findObject(id)?.obj;
-    if (!o) return hideContextMenu();
-    if (!selection.includes(id)) editor.selectIds([id]);
-    const ids = selection.includes(id) ? selection : [id];
-    const croppable = o.type === 'pdfpage' || o.type === 'image';
-    const items = [
-      croppable && !o.locked && ['자르기', () => startCropUi(id)],
-      croppable && o.crop && ['자르기 원래대로', () => cmd.resetCrop(id)],
-      croppable && '-',
-      ['잘라내기 (Ctrl+X)', () => cutSelection(ids)],
-      ['복사 (Ctrl+C)', () => { copyElements(ids); toast('복사했습니다'); }],
-      ['복제', () => cmd.duplicateObjects(ids)],
-      '-',
-      ['맨 앞으로', () => cmd.arrange(ids, 'front')],
-      ['맨 뒤로', () => cmd.arrange(ids, 'back')],
-      o.locked ? ['잠금 해제', () => cmd.setLocked([id], false).then(() => editor.selectIds([id]))] : ['잠금', () => cmd.setLocked(ids, true)],
-      '-',
-      ['삭제', () => cmd.deleteObjects(ids), 'danger'],
-    ].filter(Boolean);
-    menu.replaceChildren(...items.map(item => {
-      if (item === '-') return document.createElement('hr');
-      const [label, action, cls] = item;
-      const b = document.createElement('button');
-      b.textContent = label;
-      if (cls) b.className = cls;
-      b.onclick = () => { hideContextMenu(); action(); };
-      return b;
-    }));
-    menu.hidden = false;
-    const { innerWidth: vw, innerHeight: vh } = window;
-    menu.style.left = `${Math.min(e.clientX, vw - menu.offsetWidth - 8)}px`;
-    menu.style.top = `${Math.min(e.clientY, vh - menu.offsetHeight - 8)}px`;
+    if (!id) return hideContextMenu();
+    openContextMenu(id, e.clientX, e.clientY);
   }, true); // 캔버스(Fabric)가 우클릭 이벤트 전달을 막으므로 캡처 단계에서 받는다
-  document.addEventListener('pointerdown', e => { if (!menu.contains(e.target)) hideContextMenu(); });
+  document.addEventListener('pointerdown', e => { if (!$('#contextMenu').contains(e.target)) hideContextMenu(); });
   window.addEventListener('blur', hideContextMenu);
 
   $('#btnCropApply').onclick = applyCropUi;
   $('#btnCropCancel').onclick = () => editor.cancelCrop();
+}
+
+/** 요소 메뉴를 (x, y)에 연다. above: 그 점 위쪽으로 (휴대폰 빠른 동작 막대의 ⋯) */
+function openContextMenu(id, x, y, { above = false } = {}) {
+  const menu = $('#contextMenu');
+  const o = id && findObject(id)?.obj;
+  if (!o) return hideContextMenu();
+  if (!selection.includes(id)) editor.selectIds([id]);
+  const ids = selection.includes(id) ? selection : [id];
+  const croppable = o.type === 'pdfpage' || o.type === 'image';
+  const touch = editor.TOUCH; // 터치 화면에는 키보드 단축키 표시를 뺀다
+  const items = [
+    croppable && !o.locked && ['자르기', () => startCropUi(id)],
+    croppable && o.crop && ['자르기 원래대로', () => cmd.resetCrop(id)],
+    croppable && '-',
+    [touch ? '잘라내기' : '잘라내기 (Ctrl+X)', () => cutSelection(ids)],
+    [touch ? '복사' : '복사 (Ctrl+C)', () => { copyElements(ids); toast('복사했습니다'); }],
+    touch && cmd.hasClipboard() && ['붙여넣기', () => cmd.paste()],
+    ['복제', () => cmd.duplicateObjects(ids)],
+    '-',
+    ['맨 앞으로', () => cmd.arrange(ids, 'front')],
+    ['맨 뒤로', () => cmd.arrange(ids, 'back')],
+    o.locked ? ['잠금 해제', () => cmd.setLocked([id], false).then(() => editor.selectIds([id]))] : ['잠금', () => cmd.setLocked(ids, true)],
+    '-',
+    ['삭제', () => cmd.deleteObjects(ids), 'danger'],
+  ].filter(Boolean);
+  menu.replaceChildren(...items.map(item => {
+    if (item === '-') return document.createElement('hr');
+    const [label, action, cls] = item;
+    const b = document.createElement('button');
+    b.textContent = label;
+    if (cls) b.className = cls;
+    b.onclick = () => { hideContextMenu(); action(); };
+    return b;
+  }));
+  menu.hidden = false;
+  const { innerWidth: vw, innerHeight: vh } = window;
+  const top = above ? y - menu.offsetHeight - 6 : y;
+  menu.style.left = `${Math.max(8, Math.min(x, vw - menu.offsetWidth - 8))}px`;
+  menu.style.top = `${Math.max(8, Math.min(top, vh - menu.offsetHeight - 8))}px`;
 }
 
 function hideContextMenu() {
@@ -1165,6 +1291,58 @@ function bindKeyboard() {
       cmd.paste();
     }
   });
+}
+
+// ── 휴대폰 화면 ───────────────────────────────────────
+// 폭 760px 이하: 페이지 목록(왼쪽 서랍)·설정(아래 시트)은 버튼으로 열고, ⋯ 메뉴, 선택 요소 빠른 동작 막대
+
+const PHONE = matchMedia('(max-width: 760px)');
+
+function closeSheets() {
+  document.body.classList.remove('show-pages', 'show-panel');
+}
+
+function openSheet(name) {
+  const cls = `show-${name}`;
+  const on = !document.body.classList.contains(cls);
+  closeSheets();
+  hideContextMenu();
+  if (on) {
+    editor.exitEditing();
+    document.body.classList.add(cls);
+  }
+}
+
+function bindMobile() {
+  $('#btnPagesPane').onclick = () => openSheet('pages');
+  $('#btnPanelSheet').onclick = () => openSheet('panel');
+  $('#mobileBackdrop').onclick = closeSheets;
+  for (const b of $$('.sheet-close')) b.onclick = closeSheets;
+
+  const more = $('#moreMenu');
+  $('#btnMore').onclick = e => {
+    e.stopPropagation();
+    more.classList.toggle('open');
+  };
+  more.addEventListener('click', e => { if (e.target.closest('button')) more.classList.remove('open'); });
+  document.addEventListener('pointerdown', e => { if (!e.target.closest('#moreMenu, #btnMore')) more.classList.remove('open'); });
+
+  $('#selBar').onclick = e => {
+    const btn = e.target.closest('button');
+    const act = btn?.dataset.sel;
+    if (!act || !selection.length) return;
+    if (act === 'props') {
+      openSheet('panel');
+      $('#panel').scrollTop = 0; // 맨 위의 '선택한 요소' 카드부터
+    } else if (act === 'dup') cmd.duplicateObjects(selection);
+    else if (act === 'del') cmd.deleteObjects(selection);
+    else if (act === 'more') {
+      const r = btn.getBoundingClientRect();
+      openContextMenu(selection[0], r.left, r.top, { above: true });
+    }
+  };
+  // 화면을 넓히면(휴대폰 가로 회전·PC 창 크기 변경) 서랍·메뉴를 닫는다
+  PHONE.addEventListener('change', () => { closeSheets(); more.classList.remove('open'); });
 }
 
 // ── 끌어다 놓기 ───────────────────────────────────────

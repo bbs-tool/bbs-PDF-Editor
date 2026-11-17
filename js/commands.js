@@ -61,7 +61,7 @@ export async function openFiles(files, at, { askSplit } = {}) {
   for (const file of files) {
     try {
       const items = isPdf(file) ? await importPdf(file) : isAi(file) ? await importAi(file) : isImage(file) ? await importImage(file) : null;
-      if (!items && isOffice(file)) throw new Error(`${file.name}: Word·PPT·한글 파일은 아직 바로 열 수 없습니다. 해당 프로그램에서 [다른 이름으로 저장 → PDF]로 저장한 뒤 열어 주세요.`);
+      if (!items && isOffice(file)) throw new Error(`${file.name}: Word·PPT·Excel·한글 파일은 아직 바로 열 수 없습니다. 해당 프로그램에서 [다른 이름으로 저장 → PDF]로 저장한 뒤 열어 주세요.`);
       if (!items) throw new Error(`${file.name}: 지원하지 않는 형식입니다`);
       const long = items.filter(item => item.natH > MAX_PAGE_PT);
       const mode = long.length && askSplit ? await askSplit({ name: file.name, w: long[0].natW, h: long[0].natH, count: long.length }) : 'none';
@@ -235,7 +235,7 @@ export async function addText(opts = {}) {
   const o = {
     id: uid(),
     type: 'text',
-    text: '텍스트를 입력하세요',
+    text: editor.TEXT_PLACEHOLDER,
     cx: page.width / 2,
     cy: page.height / 2,
     w: Math.min(260, page.width * 0.8),
@@ -253,6 +253,30 @@ export async function addText(opts = {}) {
   };
   const [id] = await addObjects([o], pageIndex);
   return id;
+}
+
+/**
+ * 끌어서 정한 영역에 텍스트 상자를 만든다. box: { cx, cy, w?, h? } (startDraw 결과, pt)
+ * 영역 너비 = 상자 너비, 영역 위쪽에서 첫 줄이 시작한다. 클릭만 했으면(w 없음) 그 자리에서 기본 너비로 시작한다.
+ */
+export async function addTextInBox(box, opts = {}) {
+  ensurePage(opts.pageIndex);
+  const page = pageAt(opts.pageIndex);
+  const fontSize = opts.fontSize || 20;
+  const firstLine = fontSize * 1.13; // Fabric 한 줄 높이 (글자 크기 × 1.13)
+  let w;
+  let left;
+  let top;
+  if (box.w >= 20) {
+    w = box.w;
+    left = box.cx - box.w / 2;
+    top = box.cy - box.h / 2;
+  } else {
+    w = Math.min(260, page.width * 0.8);
+    left = Math.max(0, Math.min(box.cx, page.width - w)); // 페이지 오른쪽 밖으로 나가지 않게
+    top = box.cy - firstLine / 2;
+  }
+  return addText({ ...opts, fontSize, w, cx: left + w / 2, cy: top + firstLine / 2 });
 }
 
 /** type: 'rect' | 'ellipse', opts: { cx, cy, w, h, fill, stroke, strokeWidth, pageIndex } */
@@ -433,27 +457,38 @@ export async function nudge(ids, dx, dy) {
 
 // ── 복사·붙여넣기 ─────────────────────────────────────
 
-export function copyObjects(ids) {
+// 붙여넣기 위치: 다른 페이지에 처음 붙이면 복사한 자리 그대로, 같은 페이지에 다시 붙이면 12pt씩 비켜서.
+// (원본이 그대로 있는 페이지에서는 겹쳐 보이지 않게 처음부터 비켜서 붙인다. 잘라내기였으면 원래 자리에)
+const PASTE_STEP = 12;
+let clipSource = null; // 복사한 페이지 id (잘라냈으면 null)
+let pasteCount = new Map(); // 페이지 id → 지금까지 붙인 횟수
+
+export function copyObjects(ids, { cut = false } = {}) {
   sync();
   const page = currentPage();
   if (!page) return 0;
   clipboard = clone(page.objects.filter(o => ids.includes(o.id)));
+  clipSource = cut ? null : page.id;
+  pasteCount = new Map();
   return clipboard.length;
 }
 
 export const hasClipboard = () => clipboard.length > 0;
 
-async function pasteCopies(objs) {
+async function pasteCopies(objs, offset = PASTE_STEP) {
   const page = currentPage();
   if (!page || !objs.length) return [];
-  const copies = clone(objs).map(o => ({ ...o, id: uid(), cx: o.cx + 12, cy: o.cy + 12, locked: false }));
+  const copies = clone(objs).map(o => ({ ...o, id: uid(), cx: o.cx + offset, cy: o.cy + offset, locked: false }));
   return addObjects(copies, state.current);
 }
 
 export async function paste() {
   sync();
-  const ids = await pasteCopies(clipboard);
-  clipboard = clone(clipboard).map(o => ({ ...o, cx: o.cx + 12, cy: o.cy + 12 })); // 다음 붙여넣기는 조금 더 비켜서
+  const page = currentPage();
+  if (!page) return [];
+  const n = (pasteCount.get(page.id) || 0) + (page.id === clipSource ? 1 : 0);
+  const ids = await pasteCopies(clipboard, n * PASTE_STEP);
+  pasteCount.set(page.id, (pasteCount.get(page.id) || 0) + 1);
   return ids;
 }
 

@@ -23,6 +23,14 @@
     </p>
 
     <!-- 메일 인증 -->
+    <!-- 구글 로그인 (config.js에 GOOGLE_CLIENT_ID가 있을 때) -->
+    <section class="card login" id="googleLoginCard" hidden>
+      <h3>관리자 모드</h3>
+      <p>관리자 구글 계정으로 로그인하면 바로 열립니다.</p>
+      <div id="adminGoogleButton" class="google-button"></div>
+      <p class="entry-error" id="googleLoginError" role="alert" style="white-space: pre-line" hidden></p>
+    </section>
+
     <section class="card login admin-auth" id="loginCard">
       <h3>관리자 모드</h3>
       <p class="auth-greet"></p>
@@ -36,7 +44,21 @@
     <div id="dashboard" hidden>
       <div class="admin-grid">
         <!-- 입장 코드 -->
-        <section class="card code-card">
+        <!-- 입장 방식 (구글 로그인) -->
+        <section class="card" id="accessCard" hidden>
+          <h3>입장 방식</h3>
+          <div class="seg" id="accessMode">
+            <button data-mode="list">허용한 사람만</button>
+            <button data-mode="open">구글 계정이면 누구나</button>
+          </div>
+          <p class="hint" id="accessHint"></p>
+          <form id="userAddForm" class="stack">
+            <label>메일로 미리 허용<input type="email" id="userAddEmail" required placeholder="예: name@gmail.com" autocomplete="off"></label>
+            <button type="submit">허용 목록에 추가</button>
+          </form>
+        </section>
+
+        <section class="card code-card" id="codeCard">
           <h3>입장 코드</h3>
           <p>현재 코드: <b class="code" id="currentCode"></b> <span class="muted" id="codeVersion"></span></p>
           <form id="codeForm" class="stack">
@@ -88,8 +110,18 @@
         </table>
       </section>
 
-      <!-- 이용자 목록 -->
-      <section class="card">
+      <!-- 사용자 (구글 계정) -->
+      <section class="card" id="accountSection" hidden>
+        <h3>사용자 <span class="muted" id="accountCount"></span></h3>
+        <table class="data">
+          <thead><tr><th>이름</th><th>상태</th><th>처음 로그인</th><th>최근 접속</th><th>최근 저장</th><th class="act-col"></th></tr></thead>
+          <tbody id="accountRows"></tbody>
+        </table>
+        <p class="hint">승인 대기 중인 사람이 맨 위에 보입니다. 새 요청이 오면 관리자 메일로도 알려 드립니다. 차단하면 다음 접속부터 들어올 수 없습니다.</p>
+      </section>
+
+      <!-- 이용자 목록 (입장 코드) -->
+      <section class="card" id="userSection">
         <h3>이용자 목록 <span class="muted" id="userCount"></span></h3>
         <table class="data" id="userTable">
           <thead><tr><th>이름</th><th>관리자에게 한마디</th><th>처음 입장</th><th>최근 입장</th><th>최근 저장</th></tr></thead>

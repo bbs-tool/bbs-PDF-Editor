@@ -2,7 +2,8 @@
 <html lang="ko">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#ffffff">
   <title>BB's PDF Editor</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='5' y='2' width='22' height='28' rx='3' fill='%232563eb'/%3E%3Cpath d='M10 11h12M10 16h12M10 21h8' stroke='white' stroke-width='2'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="css/style.css">
@@ -13,17 +14,24 @@
 
     <div class="group">
       <button id="btnOpen" class="primary" title="PDF·AI·이미지를 새 페이지로 추가">파일 열기</button>
-      <button id="btnInsertImage" title="현재 페이지 위에 이미지 올리기">이미지 삽입</button>
-      <button id="btnText" title="텍스트 상자 추가">텍스트</button>
-      <button id="btnRect" title="네모 추가">▭ 네모</button>
-      <button id="btnEllipse" title="동그라미 추가">◯ 동그라미</button>
-      <button id="btnBlur" title="끌어서 영역을 정하면 모자이크·블러로 가립니다">▦ 모자이크·블러</button>
     </div>
 
-    <div class="group">
-      <button id="btnUndo" class="icon" title="실행 취소 (Ctrl+Z)">↶</button>
-      <button id="btnRedo" class="icon" title="다시 실행 (Ctrl+Y)">↷</button>
-    </div>
+    <!-- 편집 도구. 휴대폰에서는 화면 아래 막대(dock)로 내려간다 -->
+    <nav class="dock" id="dock" aria-label="편집 도구">
+      <button id="btnPagesPane" class="phone-only" title="페이지 목록"><span class="ico" aria-hidden="true">☰</span>페이지</button>
+      <div class="group">
+        <button id="btnInsertImage" title="현재 페이지 위에 이미지 올리기"><span class="ico" aria-hidden="true">🖼</span>이미지<span class="long"> 삽입</span></button>
+        <button id="btnText" title="누른 뒤 페이지 위를 끌어서 텍스트 상자 영역 지정"><span class="ico" aria-hidden="true">T</span>텍스트</button>
+        <button id="btnRect" title="네모 추가"><span class="ico keep" aria-hidden="true">▭</span> 네모</button>
+        <button id="btnEllipse" title="동그라미 추가"><span class="ico keep" aria-hidden="true">◯</span> 동그라미</button>
+        <button id="btnBlur" title="끌어서 영역을 정하면 모자이크·블러로 가립니다"><span class="ico keep" aria-hidden="true">▦</span> 모자이크<span class="long">·블러</span></button>
+      </div>
+      <div class="group">
+        <button id="btnUndo" class="icon" title="실행 취소 (Ctrl+Z)"><span class="ico keep" aria-hidden="true">↶</span><span class="phone-label">취소</span></button>
+        <button id="btnRedo" class="icon" title="다시 실행 (Ctrl+Y)"><span class="ico keep" aria-hidden="true">↷</span><span class="phone-label">다시</span></button>
+      </div>
+      <button id="btnPanelSheet" class="phone-only" title="요소·페이지 설정"><span class="ico" aria-hidden="true">⚙</span>설정</button>
+    </nav>
 
     <div class="group zoom">
       <button id="btnZoomOut" class="icon" title="축소 (Ctrl+-)">−</button>
@@ -33,10 +41,16 @@
     </div>
 
     <div class="spacer"></div>
-    <button id="btnAdmin" title="관리자 화면 (메일 인증)" hidden>관리자 모드</button>
-    <button id="btnHelp" title="사용법 안내 다시 보기">튜토리얼</button>
-    <button id="btnExportImage" title="페이지를 PNG·JPG 이미지로 저장">이미지 저장</button>
+    <!-- 휴대폰에서는 ⋯ 메뉴 안으로 들어간다 -->
+    <div class="more-menu" id="moreMenu">
+      <button id="btnInsertImageMore" class="phone-only" title="현재 페이지 위에 이미지 올리기">이미지 삽입</button>
+      <button id="btnAdmin" title="관리자 화면 (메일 인증)" hidden>관리자 모드</button>
+      <button id="btnAccount" class="account-btn" title="로그인한 구글 계정 (누르면 로그아웃)" hidden></button>
+      <button id="btnHelp" title="사용법 안내 다시 보기">튜토리얼</button>
+      <button id="btnExportImage" title="페이지를 PNG·JPG 이미지로 저장">이미지 저장</button>
+    </div>
     <button id="btnExport" class="primary">PDF 저장</button>
+    <button id="btnMore" class="icon phone-only" title="더보기" aria-label="더보기" aria-controls="moreMenu">⋯</button>
 
     <input type="file" id="fileOpen" multiple hidden>
     <input type="file" id="fileImage" multiple hidden>
@@ -47,6 +61,7 @@
       <div class="pane-head">
         <span>페이지 <b id="pageCount">0</b></span>
         <button id="btnAddPage" class="small">+ 빈 페이지</button>
+        <button class="icon close phone-only sheet-close" title="닫기" aria-label="닫기">×</button>
       </div>
       <div class="pane-tools">
         <button id="btnSelectPages" class="small" title="모든 페이지 선택 / 선택 해제 (Ctrl·Shift+클릭으로 골라 선택)">전체 선택</button>
@@ -57,8 +72,10 @@
 
     <section class="stage" id="stage">
       <div class="empty" id="emptyState">
-        <p class="empty-title">PDF·AI·이미지를 여기로 끌어다 놓으세요</p>
-        <p class="empty-sub">또는 위의 <b>파일 열기</b>를 누르세요. 파일은 서버로 보내지 않고 이 브라우저 안에서만 처리합니다.</p>
+        <p class="empty-title desktop-only">PDF·AI·이미지를 여기로 끌어다 놓으세요</p>
+        <p class="empty-sub desktop-only">또는 위의 <b>파일 열기</b>를 누르세요. 파일은 서버로 보내지 않고 이 브라우저 안에서만 처리합니다.</p>
+        <p class="empty-title phone-only">위의 <b>파일 열기</b>를 눌러 시작하세요</p>
+        <p class="empty-sub phone-only">PDF·사진을 불러와 글자·도형을 넣고 저장할 수 있습니다. 파일은 서버로 보내지 않고 이 휴대폰 안에서만 처리합니다.</p>
       </div>
       <div class="canvas-wrap" id="canvasWrap"><canvas id="editorCanvas"></canvas></div>
     </section>
@@ -69,6 +86,10 @@
     </div>
 
     <aside class="panel" id="panel">
+      <div class="sheet-head phone-only">
+        <b>설정</b>
+        <button class="icon close sheet-close" title="닫기" aria-label="닫기">×</button>
+      </div>
       <!-- 선택한 요소 속성 -->
       <section class="card object-card" id="objectPanel" hidden>
         <h3><span id="objectTitle">요소</span><button id="btnObjectClose" class="icon close" title="선택 해제 (Esc)" aria-label="선택 해제">×</button></h3>
@@ -80,6 +101,7 @@
           <label>높이 (mm)<input type="number" step="0.5" min="1" data-geom="h"></label>
           <label>회전 (°)<input type="number" step="1" data-geom="angle"></label>
         </div>
+        <label class="check" id="keepRatioRow" hidden title="켜면 너비·높이 중 하나만 바꿔도 원본 가로세로 비율대로 함께 바뀌고, 화면에서도 모서리로만 크기를 바꿉니다"><input type="checkbox" id="propKeepRatio"> 원본 비율 유지</label>
 
         <label class="row">투명도
           <input type="range" min="0" max="100" id="propOpacity">
@@ -177,6 +199,7 @@
           <label>너비 (mm)<input type="number" min="10" max="5080" step="1" id="pageCustomW"></label>
           <label>높이 (mm)<input type="number" min="10" max="5080" step="1" id="pageCustomH"></label>
         </div>
+        <label class="check" id="pageKeepRatioRow" hidden title="켜면 너비·높이 중 하나만 바꿔도 원본(배경 PDF·이미지) 비율대로 함께 바뀝니다. 원본이 없는 빈 페이지는 지금 비율을 유지합니다"><input type="checkbox" id="pageKeepRatio"> 원본 비율 유지</label>
         <div class="sub" id="marginFields" hidden>
           <span class="label">여백 추가 (상하좌우, mm)</span>
           <label class="check"><input type="checkbox" id="marginSame"> 모든 영역 동일 여백 적용</label>
@@ -373,6 +396,17 @@
     </form>
   </dialog>
 
+  <dialog id="loginDialog" class="entry-dialog">
+    <div class="dialog-body">
+      <h3 class="entry-title"><span class="brand-bb">BB's</span> PDF Editor 입장</h3>
+      <p class="hint">구글 계정으로 로그인해야 사용할 수 있습니다. 회사 구글 계정(Workspace)도 됩니다.</p>
+      <div id="googleButton" class="google-button"></div>
+      <p class="entry-error" id="loginStatus" role="alert" style="white-space: pre-line" hidden></p>
+      <p class="hint">구글 계정의 이름·메일과 PDF·이미지를 저장한 시각이 관리자에게 기록됩니다. 편집하는 파일은 서버로 보내지 않습니다.
+        한 번 로그인하면 이 브라우저에서 30일 동안 유지됩니다. <a href="privacy.html" target="_blank" rel="noopener">개인정보처리방침</a></p>
+    </div>
+  </dialog>
+
   <dialog id="adminDialog">
     <div class="dialog-body admin-auth">
       <h3>관리자 모드</h3>
@@ -420,6 +454,15 @@
         <label class="check"><input type="checkbox" id="pdfMerge" checked> 나눠 불러온 페이지는 원래처럼 한 페이지로 합치기</label>
         <p class="hint" id="pdfMergeHint"></p>
       </div>
+      <label>용량 줄이기 (압축)
+        <select id="pdfCompress">
+          <option value="none">안 함 — 원본 화질 그대로</option>
+          <option value="normal">보통 — 사진 화질 조금 낮춤, 글자는 그대로 (권장)</option>
+          <option value="strong">강하게 — 사진 화질 더 낮춤, 글자는 그대로</option>
+          <option value="max">최대 — 페이지 전체를 이미지로 (글자 선택·검색 안 됨)</option>
+        </select>
+      </label>
+      <p class="hint" id="pdfCompressHint">사진이 많은 PDF일수록 많이 줄어듭니다. 그래픽(벡터)이 복잡하거나 글자·도형만 있는 PDF는 '최대'를 골라야 줄어듭니다.</p>
       <p class="hint warn" id="pdfBlurHint" hidden></p>
       <div class="btn-row end">
         <button value="cancel" formnovalidate>취소</button>
@@ -448,6 +491,15 @@
   </section>
 
   <div id="contextMenu" class="context-menu" hidden></div>
+
+  <!-- 휴대폰: 서랍 뒤 어두운 배경, 요소를 선택하면 나타나는 빠른 동작 막대 -->
+  <div id="mobileBackdrop" class="mobile-backdrop"></div>
+  <div id="selBar" class="sel-bar" role="toolbar" aria-label="선택한 요소">
+    <button data-sel="props">속성</button>
+    <button data-sel="dup">복제</button>
+    <button data-sel="del" class="danger">삭제</button>
+    <button data-sel="more" aria-label="더보기">⋯</button>
+  </div>
 
   <div id="busy" class="busy" hidden><div class="spinner"></div><span id="busyMsg">처리 중…</span></div>
   <div id="toast" class="toast" role="status"></div>
